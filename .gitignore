@@ -8,3 +8,5 @@ spec/dummy/tmp/
 spec/dummy/app/assets/builds/*
 !spec/dummy/app/assets/builds/.keep
 *.gem
+/gemfiles/*.lock
+code-review-actions.md
