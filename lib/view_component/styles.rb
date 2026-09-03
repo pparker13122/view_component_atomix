@@ -249,6 +249,26 @@ module ViewComponent
           :"#{accessor_base(mod)}_theme"
         end
 
+        def companion_styles_module
+          return @_companion_styles_module if @_companion_styles_module
+          return unless is_a?(Class) && name
+
+          candidate = "#{name}Styles".safe_constantize
+          return unless candidate.instance_of?(Module) && candidate < Base
+
+          @_companion_styles_module = candidate
+        end
+
+        def companion_styles
+          mod = companion_styles_module
+          mod && mod < Variables ? mod.send(:resolved_styles) : Sheet::EMPTY
+        end
+
+        def companion_theme
+          mod = companion_styles_module
+          mod && mod < Theme ? mod.send(:resolved_theme) : Style::EMPTY
+        end
+
         def add_styles_mixin(mod)
           styles_mixins << mod
           @_styles_resolved = nil
@@ -299,7 +319,7 @@ module ViewComponent
           @_styles_resolved ||= begin
             compile_pending_styles
             merged = styles_mixins.select { |mod| mod < Variables && styles_accessor_for(mod) == current_styles_method }
-            layers = [inherited_styles, *merged.map { |mod| mod.send(:resolved_styles) }]
+            layers = [inherited_styles, companion_styles, *merged.map { |mod| mod.send(:resolved_styles) }]
             layers.reduce(&:merge).merge(@_styles_own || Sheet::EMPTY)
           end
         end
@@ -347,7 +367,8 @@ module ViewComponent
 
         def styles_context
           merged = styles_mixins.select { |mod| mod < Variables && styles_accessor_for(mod) == current_styles_method }
-          layers = [inherited_styles, *merged.map { |mod| mod.send(:resolved_styles) }, @_styles_own || Sheet::EMPTY]
+          layers = [inherited_styles, companion_styles, *merged.map { |mod| mod.send(:resolved_styles) },
+                    @_styles_own || Sheet::EMPTY]
           layers.reduce(&:merge)
         end
 
@@ -365,7 +386,8 @@ module ViewComponent
 
             inherited = is_a?(Class) && superclass.respond_to?(:resolved_theme, true) ? superclass.send(:resolved_theme) : Style::EMPTY
             merged = styles_mixins.select { |mod| mod < Theme && theme_accessor_for(mod) == :theme }
-            [inherited, *merged.map { |mod| mod.send(:resolved_theme) }].reduce(Style::EMPTY, :merge).merge(@_theme_own)
+            [inherited, companion_theme, *merged.map { |mod| mod.send(:resolved_theme) }]
+              .reduce(Style::EMPTY, :merge).merge(@_theme_own)
           end
         end
 
