@@ -35,7 +35,11 @@ module ViewComponent
         returned = builder.instance_exec(&block)
         definitions = builder.definitions
         if definitions.empty?
-          definitions = returned.is_a?(Hash) ? returned : {}
+          unless returned.nil? || returned.is_a?(Hash)
+            raise ArgumentError, "styles block must declare traits or return a Hash, got #{returned.class}"
+          end
+
+          definitions = returned || {}
         elsif returned.is_a?(Hash)
           raise ArgumentError, "styles block must either declare traits or return a Hash, not both"
         end
@@ -63,15 +67,15 @@ module ViewComponent
       end
 
       def method_missing(name, *args, **kwargs, &block)
-        if @owner&.respond_to?(name, true)
-          @owner.send(name, *args, **kwargs, &block)
+        if @owner&.respond_to?(name)
+          @owner.public_send(name, *args, **kwargs, &block)
         else
           super
         end
       end
 
       def respond_to_missing?(name, include_private = false)
-        @owner&.respond_to?(name, true) || super
+        @owner&.respond_to?(name) || super
       end
     end
   end

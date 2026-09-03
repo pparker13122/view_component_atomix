@@ -237,6 +237,64 @@ RSpec.describe "traits" do
     end
   end
 
+  describe "review fixes" do
+    it "treats false like nil for enumerated and dynamic traits" do
+      sheet = create(size: { default: :sm, sm: { font_size: 14 } }, sized: ->(w) { { width: w } })
+      expect(sheet.size(false)).to equal(sheet.size(:sm))
+      expect(sheet.sized(false)).to be_empty
+    end
+
+    it "compiles the hash form in declaration order with blocks" do
+      klass = Class.new(ViewComponent::Base) do
+        include ViewComponent::Styles
+        def self.name = "OrderedComponent"
+        styles do
+          trait :button, padding: 8
+        end
+        styles cta: { button: true, font_weight: 700 }
+      end
+      expect(klass.styles.cta.classes.keys).to eq(%w[padding font-weight])
+    end
+
+    it "invalidates subclass sheets when the parent gains styles later" do
+      parent = Class.new(ViewComponent::Base) do
+        include ViewComponent::Styles
+        def self.name = "ReopenedParentComponent"
+        styles { trait :root, padding: 4 }
+      end
+      child = Class.new(parent)
+      expect(child.styles.names).to eq([:root])
+      parent.class_eval { styles { trait :late, margin: 9 } }
+      expect(child.styles.names).to eq(%i[root late])
+    end
+
+    it "rejects a block that returns something other than a Hash" do
+      expect { ViewComponent::Styles.create { "oops" } }
+        .to raise_error(ArgumentError, /must declare traits or return a Hash, got String/)
+    end
+
+    it "does not expose private class methods inside the block" do
+      klass = Class.new(ViewComponent::Base) do
+        include ViewComponent::Styles
+        def self.name = "PrivateComponent"
+        def self.secret = { padding: 1 }
+        private_class_method :secret
+        styles { trait :root, **secret }
+      end
+      expect { klass.styles }.to raise_error(NameError, /secret/)
+    end
+
+    it "renders attrs safely through every buffer path" do
+      attrs = create(root: { padding: 4 }).props(create(root: { padding: 4 }).root)
+      expect(attrs).to be_html_safe
+      expect("".html_safe << attrs).to eq(attrs.to_s)
+      expect("".html_safe + attrs).to eq(attrs.to_s)
+      buffer = ActionView::OutputBuffer.new
+      buffer.safe_append = attrs
+      expect(buffer.to_s).to eq(attrs.to_s)
+    end
+  end
+
   describe "block DSL in components" do
     let(:component) do
       Class.new(ViewComponent::Base) do

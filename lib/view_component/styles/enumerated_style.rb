@@ -13,7 +13,7 @@ module ViewComponent
       end
 
       def call(value = nil)
-        value = default if value.nil?
+        value = default if value.nil? || value == false
         return Style::EMPTY if value.nil?
 
         key = value.to_sym

@@ -33,7 +33,7 @@ module ViewComponent
 
       def call(*args)
         return Style::EMPTY if args.empty? && arity != 0
-        return Style::EMPTY if !args.empty? && args.all?(&:nil?)
+        return Style::EMPTY if !args.empty? && args.all? { |arg| arg.nil? || arg == false }
 
         result = @fn.call(*args)
         unless result.is_a?(Hash)

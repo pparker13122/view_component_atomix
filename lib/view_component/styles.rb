@@ -285,13 +285,14 @@ module ViewComponent
                                  "Include ViewComponent::Styles to declare style sets."
           end
 
-          if block
-            (@_styles_blocks ||= []) << block
-          else
-            add_styles(definitions)
-          end
-          @_styles_resolved = nil
+          (@_styles_blocks ||= []) << (block || proc { definitions })
+          invalidate_styles
           nil
+        end
+
+        def invalidate_styles
+          @_styles_resolved = nil
+          descendants.each { |klass| klass.instance_variable_set(:@_styles_resolved, nil) } if is_a?(Class)
         end
 
         def resolved_styles
