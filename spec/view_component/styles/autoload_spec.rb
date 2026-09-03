@@ -13,7 +13,7 @@ RSpec.describe "style directories" do
   it "registers app/components/styles as an autoload root" do
     dir = Rails.root.join("app/components/styles").to_s
     expect(Rails.autoloaders.main.dirs).to include(dir)
-    expect(Rails.application.config.eager_load_paths).to include(dir)
+    expect(Rails.application.config.paths.eager_load).to include(dir)
   end
 
   it "eager loads both directories into the registry" do
