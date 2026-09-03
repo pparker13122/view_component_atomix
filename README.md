@@ -287,6 +287,38 @@ Use a plain module. One that extends `ActiveSupport::Concern` defers the include
 
 Style files live in either `app/styles` or `app/components/styles`. Both are autoload roots, so `app/components/styles/pill_styles.rb` defines `PillStyles`, not `Styles::PillStyles`.
 
+### Companion modules
+
+A module named after a component with `Styles` appended is picked up without an `include`. Its traits, variables and theme merge straight into the component's own `styles` and `theme`, as if they had been declared in the class body, so the component's own declarations win on conflicts and combination traits can reference the module's traits. `ButtonComponent` looks for `ButtonComponentStyles`, and `Admin::ButtonComponent` looks for `Admin::ButtonComponentStyles`. The component still needs `include ViewComponent::Styles`.
+
+```ruby
+# app/components/toast_component_styles.rb
+module ToastComponentStyles
+  include ViewComponent::Styles
+
+  styles do
+    trait :root, display: :flex, gap: 6, padding: 12
+  end
+end
+
+# app/components/toast_component.rb
+class ToastComponent < ViewComponent::Base
+  include ViewComponent::Styles
+
+  styles do
+    trait :cta, :root, font_weight: 700
+  end
+
+  erb_template <<~ERB
+    <div <%= styles.props(styles.root) %>><%= content %></div>
+  ERB
+end
+
+ToastComponent.styles.names  # => [:root, :cta]
+```
+
+The lookup is per class, so a subclass inherits its parent's companion and can add its own. A constant with the matching name that is not a style module is ignored.
+
 ### Plain Ruby constants
 
 Everything a component can do, plain Ruby can do with `ViewComponent::Styles.create`. It takes a hash of traits, and each value follows the same shape rules as `trait`. A block with `trait` calls works too. The result is an ordinary sheet, so assign it to a constant and reference it from any view or component:
