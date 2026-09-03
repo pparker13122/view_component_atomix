@@ -1,0 +1,10 @@
+/.bundle/
+/pkg/
+/tmp/
+/coverage/
+Gemfile.lock
+spec/dummy/log/
+spec/dummy/tmp/
+spec/dummy/app/assets/builds/*
+!spec/dummy/app/assets/builds/.keep
+*.gem

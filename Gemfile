@@ -1,0 +1,11 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec
+
+gem "rails", "~> 7.0.5"
+gem "sprockets-rails"
+gem "rspec-rails", "~> 6.1"
+gem "capybara"
+gem "rake"

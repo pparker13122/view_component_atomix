@@ -1,0 +1,5 @@
+<div id="card" <%= sx(CardStyles::CARD.root, CardStyles::CARD.title) %>>
+  <%= render ButtonComponent.new(variant: :primary, width: @width) do %>Save<% end %>
+  <%= render PrimaryButtonComponent.new(variant: :primary) do %>Big<% end %>
+  <%= render LazyComponent.new %>
+</div>
