@@ -3,6 +3,25 @@
 RSpec.describe ViewComponent::Styles::DynamicStyle do
   let!(:registry) { with_fresh_registry }
 
+  it "forwards positional and keyword arguments through every sheet accessor" do
+    sheet = ViewComponent::Styles.create(box: {
+      dynamic: %i[width height], using: ->(height, width:) { { width: width, height: height } }
+    })
+
+    [sheet.box(20, width: 10), sheet.fetch(:box, 20, width: 10), sheet[:box].call(20, width: 10)].each do |style|
+      expect(style.inline.values).to contain_exactly("10px", "20px")
+    end
+  end
+
+  it "supports optional keywords and empty keyword values" do
+    sheet = ViewComponent::Styles.create(box: {
+      dynamic: [:width], using: ->(width: 10) { { width: width } }
+    })
+    expect(sheet.box.inline.values).to eq(["10px"])
+    expect(sheet.box(width: nil)).to be_empty
+    expect(sheet.box(width: false)).to be_empty
+  end
+
   it "registers var-backed rules at definition time" do
     described_class.new(name: "spec", set: :size, fn: ->(w, h) { { width: w, height: h } })
     expect(registry.rules.map(&:to_css)).to contain_exactly(
@@ -23,6 +42,12 @@ RSpec.describe ViewComponent::Styles::DynamicStyle do
     dynamic = described_class.new(name: "spec", set: :size, fn: ->(w) { { width: w } })
     expect(dynamic.call(nil)).to be_empty
     expect(dynamic.call).to be_empty
+  end
+
+  it "calls a lambda with only optional arguments when invoked bare" do
+    dynamic = described_class.new(name: "spec", set: :size, fn: ->(width = 10) { { width: width } })
+
+    expect(dynamic.call.inline_style).to include(":10px")
   end
 
   it "survives lambdas that do arithmetic on their arguments" do

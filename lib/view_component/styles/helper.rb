@@ -18,9 +18,17 @@ module ViewComponent
           content_tag(:style, ViewComponent::Styles.registry.to_css.html_safe,
                       { data: { view_component_styles: true } }.merge(options))
         else
-          stylesheet_link_tag(File.basename(config.output_path, ".css"),
+          stylesheet_link_tag(stylesheet_logical_path(config.output_path),
                               { "data-turbo-track": "reload" }.merge(options))
         end
+      end
+
+      private
+
+      def stylesheet_logical_path(output_path)
+        path = output_path.to_s.delete_suffix(".css")
+        path = path.delete_prefix("#{Rails.root}/") if defined?(Rails) && Rails.respond_to?(:root) && Rails.root
+        path.sub(%r{\Aapp/assets/(?:builds|stylesheets)/}, "")
       end
     end
   end

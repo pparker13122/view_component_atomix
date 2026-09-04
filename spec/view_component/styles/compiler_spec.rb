@@ -55,6 +55,17 @@ RSpec.describe ViewComponent::Styles::Compiler do
     expect(registry.rules.map(&:to_css)).to include(a_string_matching(/::before\{content:""\}/))
   end
 
+  it "allows pseudo-elements inside enumerated members" do
+    sheet = compile(size: { sm: { font_size: 14, before: { content: '""' } }, lg: { font_size: 20 } })
+
+    expect(sheet.size(:sm).classes.keys).to contain_exactly("font-size", "::beforecontent")
+  end
+
+  it "rejects a hash-valued enumerated default" do
+    expect { compile(size: { default: { font_size: 14 }, sm: { font_size: 12 } }) }
+      .to raise_error(ArgumentError, /must name a member/)
+  end
+
   it "emits fallback declarations for arrays" do
     compile(base: { position: %w[sticky fixed] })
     expect(registry.rules.first.to_css).to match(/\{position:sticky;position:fixed\}/)
@@ -69,6 +80,11 @@ RSpec.describe ViewComponent::Styles::Compiler do
   it "rejects unknown symbol conditions" do
     expect { compile(base: { color: { bogus: "red" } }) }
       .to raise_error(ArgumentError, /Unknown style condition :bogus/)
+  end
+
+  it "explains when an unknown property is interpreted as an enumerated member" do
+    expect { compile(base: { colour: { hover: "red" } }) }
+      .to raise_error(ArgumentError, /member :colour.*trait :base.*check its spelling/)
   end
 
   it "rejects top-level conditions" do

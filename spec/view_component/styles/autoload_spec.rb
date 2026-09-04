@@ -1,7 +1,45 @@
 # frozen_string_literal: true
 
 RSpec.describe "style directories" do
-  it "removes obsolete CSS before reloaded definitions register replacement rules" do
+  it "removes reloadable rules while preserving shared and permanent rules" do
+    registry = with_fresh_registry
+    permanent = ViewComponent::Styles.create(root: { color: "red" }).root
+    source = Rails.root.join("app/styles/reload_brand.rb").to_s
+
+    %w[red blue red].each do |color|
+      registry.with_source(source) do
+        ViewComponent::Styles.define_vars(name: "ReloadBrand", accent: { default: color, dark: "black" })
+        ViewComponent::Styles.create(root: { color: "red", padding: 3 })
+      end
+      expect(registry.to_css).to include(":#{color}}")
+      expect(registry.to_css.scan(/:root\{/).size).to eq(2)
+      ActiveSupport::Reloader.new.run_callbacks(:class_unload)
+      expect(registry.to_css).to eq(".#{permanent.class_names}{color:red}")
+    end
+  end
+
+  it "tracks the source of lazy blocks, hash declarations, variables and themes" do
+    registry = with_fresh_registry
+    source = Rails.root.join("app/components/reload_example.rb").to_s
+    klass = Class.new(ViewComponent::Base)
+    klass.class_eval(<<~RUBY, source, 1)
+      include ViewComponent::Styles
+      ViewComponent::Styles.create(root: { background: "white" })
+      style_vars gap: 2
+      style_vars { { accent: "red" } }
+      styles root: { padding: 9 }
+      styles { trait :other, margin: 7 }
+      styles { trait :box, dynamic: [:width], using: ->(width:) { { width: width } } }
+      theme accent: "blue"
+    RUBY
+    klass.styles
+    klass.theme
+    expect(registry.size).to eq(7)
+    ActiveSupport::Reloader.new.run_callbacks(:class_unload)
+    expect(registry.to_css).to eq("")
+  end
+
+  it "keeps CSS registered by non-reloadable code across class unload" do
     registry = ViewComponent::Styles::Registry.new
     allow(ViewComponent::Styles).to receive(:registry).and_return(registry)
     allow(ViewComponent::Styles).to receive(:includers).and_return([])
@@ -13,10 +51,7 @@ RSpec.describe "style directories" do
 
     ActiveSupport::Reloader.new.run_callbacks(:class_unload)
 
-    new_style = ViewComponent::Styles.create(root: { color: "blue" }).root
-    css = registry.to_css
-    expect(css).to include(".#{new_style.class_names}{color:blue}")
-    expect(css).not_to include(".#{old_class}{color:red}")
+    expect(registry.to_css).to include(".#{old_class}{color:red}")
   end
 
   it "autoloads app/styles at the top level" do

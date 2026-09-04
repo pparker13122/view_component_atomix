@@ -4,6 +4,8 @@ require "set"
 require "fileutils"
 require "pathname"
 require "digest/sha1"
+require "monitor"
+require "tempfile"
 require "active_support"
 require "active_support/concern"
 require "active_support/core_ext/string/output_safety"
@@ -18,6 +20,7 @@ require_relative "styles/property"
 require_relative "styles/known_properties"
 require_relative "styles/rule"
 require_relative "styles/registry"
+require_relative "styles/weak_collection"
 require_relative "styles/attrs"
 require_relative "styles/style"
 require_relative "styles/dynamic_properties"
@@ -36,6 +39,8 @@ module ViewComponent
     class Error < StandardError; end
     class VarsNotConfigured < Error; end
 
+    RESOLUTION_MONITOR = Monitor.new
+
     class << self
       def config
         @config ||= Configuration.new
@@ -50,11 +55,11 @@ module ViewComponent
       end
 
       def includers
-        @includers ||= []
+        @includers ||= WeakCollection.new
       end
 
       def dynamic_styles
-        @dynamic_styles ||= []
+        @dynamic_styles ||= WeakCollection.new
       end
 
       def compile_dynamic_styles!
@@ -81,8 +86,10 @@ module ViewComponent
 
         digest_input = overrides.sort_by { |k, _| k.to_s }.map { |k, v| "#{k}=#{v.inspect}" }
         class_name = Hashing.class_name("theme", vars.id, digest_input)
-        overrides.each do |key, value|
-          Vars.register(".#{class_name}", vars.var_name(key), value)
+        registry.transaction do
+          overrides.each do |key, value|
+            Vars.register(".#{class_name}", vars.var_name(key), value)
+          end
         end
         Style.new({ "theme:#{vars.id}" => [class_name] })
       end
@@ -123,13 +130,16 @@ module ViewComponent
         if defined?(Rails) && Rails.respond_to?(:autoloaders) && Rails.application
           config.eager_load_paths.each do |relative|
             dir = Rails.root.join(relative)
-            Rails.autoloaders.main.eager_load_dir(dir.to_s) if dir.directory?
+            next unless dir.directory?
+
+            Rails.autoloaders.main.eager_load_dir(dir.to_s)
           end
         end
 
         includers.each do |klass|
           targets = klass.is_a?(Class) ? [klass, *klass.descendants] : [klass]
           targets.each do |k|
+            next if k.instance_variable_get(:@_styles_unloaded)
             k.send(:resolved_styles)
             k.send(:resolved_theme) if k < Theme
           end
@@ -141,21 +151,53 @@ module ViewComponent
         root = defined?(Rails) && Rails.respond_to?(:root) && Rails.root ? Rails.root : Pathname.new(Dir.pwd)
         path = root.join(path || config.output_path)
         css = "#{registry.to_css}\n"
-        digest = Digest::SHA1.hexdigest(css)
-        return path if !force && @written_digest == digest && path.exist?
+        return path if !force && path.file? && File.binread(path) == css.b
 
         FileUtils.mkdir_p(path.dirname)
-        File.write(path, css)
-        @written_digest = digest
+        Tempfile.create([".view_component_styles", ".css"], path.dirname) do |file|
+          file.chmod(path.exist? ? path.stat.mode & 0o777 : 0o666 & ~File.umask)
+          file.write(css)
+          file.flush
+          File.rename(file.path, path)
+        end
         path
       end
 
+      # A full reset discards declarations on existing owners as well as rules.
+      # Standalone Style/Sheet/Vars objects must be recreated by the caller.
       def reset!
-        registry.clear
-        dynamic_styles.clear
-        @vars = nil
-        @config = nil
-        @written_digest = nil
+        RESOLUTION_MONITOR.synchronize do
+          owners.each do |owner|
+            owner.instance_variables.grep(/\A@_(styles_(own|resolved|blocks|breakpoints)|vars_blocks|theme_(own|resolved|pending)|companion_styles_module)\z/).each do |ivar|
+              owner.remove_instance_variable(ivar)
+            end
+          end
+          registry.clear
+          dynamic_styles.clear
+          @vars = nil
+          config.send(:initialize) # Keep Rails configuration references valid.
+        end
+      end
+
+      def owners
+        includers.flat_map { |owner| owner.is_a?(Class) ? [owner, *owner.descendants] : [owner] }.uniq
+      end
+
+      def invalidate_caches!
+        RESOLUTION_MONITOR.synchronize do
+          owners.each do |owner|
+            owner.instance_variable_set(:@_styles_resolved, nil)
+            owner.instance_variable_set(:@_theme_resolved, nil)
+          end
+        end
+      end
+
+      def unload!(owner, source)
+        if owner.is_a?(Module)
+          owner.instance_variable_set(:@_styles_unloaded, true)
+          includers.delete_if { |candidate| candidate.equal?(owner) }
+        end
+        dynamic_styles.delete_if { |style| style.source_path == source }
       end
 
       private
@@ -315,23 +357,36 @@ module ViewComponent
                                  "Include ViewComponent::Styles to declare style sets."
           end
 
-          (@_styles_blocks ||= []) << (block || proc { definitions })
+          source = block ? block.source_location.first : caller_locations(2, 1).first.path
+          (@_styles_blocks ||= []) << [block || proc { definitions }, source]
           invalidate_styles
           nil
         end
 
         def invalidate_styles
-          @_styles_resolved = nil
-          descendants.each { |klass| klass.instance_variable_set(:@_styles_resolved, nil) } if is_a?(Class)
+          ViewComponent::Styles.invalidate_caches!
         end
 
         def resolved_styles
-          @_styles_resolved ||= begin
-            compile_pending_styles
-            merged = styles_mixins.select { |mod| mod < Variables && styles_accessor_for(mod) == current_styles_method }
-            layers = [inherited_styles, companion_styles, *merged.map { |mod| mod.send(:resolved_styles) }]
-            layers.reduce(&:merge).merge(@_styles_own || Sheet::EMPTY)
+          styles_resolution_monitor.synchronize do
+            if @_styles_resolving
+              compile_pending_vars
+              return styles_context
+            end
+            return @_styles_resolved if @_styles_resolved
+
+            begin
+              @_styles_resolving = true
+              compile_pending_styles
+              @_styles_resolved = styles_context
+            ensure
+              @_styles_resolving = false
+            end
           end
+        end
+
+        def styles_resolution_monitor
+          RESOLUTION_MONITOR
         end
 
         def inherited_styles
@@ -341,17 +396,47 @@ module ViewComponent
         end
 
         def compile_pending_styles
+          compile_pending_vars
           blocks = @_styles_blocks || []
           @_styles_blocks = []
-          blocks.each do |block|
-            definitions, breakpoints = Builder.evaluate(self, block)
-            add_breakpoints(breakpoints)
-            add_styles(definitions)
+          blocks.each_with_index do |(block, source), index|
+            begin
+              ViewComponent::Styles.registry.with_source(source) do
+                definitions, breakpoints = Builder.evaluate(self, block)
+                ViewComponent::Styles.registry.transaction(independent: true) do
+                  previous_breakpoints = @_styles_breakpoints
+                  begin
+                    add_breakpoints(breakpoints)
+                    add_styles(definitions)
+                  rescue StandardError
+                    @_styles_breakpoints = previous_breakpoints
+                    raise
+                  end
+                end
+              end
+            rescue StandardError
+              @_styles_blocks = blocks.drop(index) + @_styles_blocks
+              @_styles_resolved = nil
+              raise
+            end
           end
+        end
 
+        def compile_pending_vars
           var_blocks = @_vars_blocks || []
           @_vars_blocks = []
-          var_blocks.each { |label, block| add_vars(label, block.call) }
+          var_blocks.each_with_index do |(label, block), index|
+            begin
+              ViewComponent::Styles.registry.with_source(block.source_location.first) do
+                definitions = block.call
+                ViewComponent::Styles.registry.transaction(independent: true) { add_vars(label, definitions) }
+              end
+            rescue StandardError
+              @_vars_blocks = var_blocks.drop(index) + @_vars_blocks
+              @_styles_resolved = nil
+              raise
+            end
+          end
         end
 
         def add_styles(definitions)
@@ -389,15 +474,25 @@ module ViewComponent
         end
 
         def resolved_theme
-          @_theme_resolved ||= begin
+          styles_resolution_monitor.synchronize do
+            return @_theme_resolved if @_theme_resolved
+
             pending = @_theme_pending || []
             @_theme_pending = []
-            @_theme_own = (@_theme_own || Style::EMPTY).merge(pending.map { |entry| build_theme(*entry) }.reduce(Style::EMPTY, :merge))
+            pending.each_with_index do |(vars, overrides, block, source), index|
+              begin
+                built = ViewComponent::Styles.registry.with_source(source) { build_theme(vars, overrides, block) }
+                @_theme_own = (@_theme_own || Style::EMPTY).merge(built)
+              rescue StandardError
+                @_theme_pending = pending.drop(index) + @_theme_pending
+                raise
+              end
+            end
 
             inherited = is_a?(Class) && superclass.respond_to?(:resolved_theme, true) ? superclass.send(:resolved_theme) : Style::EMPTY
             merged = styles_mixins.select { |mod| mod < Theme && theme_accessor_for(mod) == :theme }
-            [inherited, companion_theme, *merged.map { |mod| mod.send(:resolved_theme) }]
-              .reduce(Style::EMPTY, :merge).merge(@_theme_own)
+            @_theme_resolved = [inherited, companion_theme, *merged.map { |mod| mod.send(:resolved_theme) }]
+                               .reduce(Style::EMPTY, :merge).merge(@_theme_own || Style::EMPTY)
           end
         end
 
@@ -409,7 +504,9 @@ module ViewComponent
             resolved_styles.vars_for(key) ||
               raise(KeyError, "Unknown var #{key.inspect} in theme for #{self}. Available vars: #{resolved_styles.var_names.inspect}")
           end
-          grouped.map { |owner, pairs| ViewComponent::Styles.create_theme(owner, **pairs.to_h) }.reduce(Style::EMPTY, :merge)
+          ViewComponent::Styles.registry.transaction(independent: true) do
+            grouped.map { |owner, pairs| ViewComponent::Styles.create_theme(owner, **pairs.to_h) }.reduce(Style::EMPTY, :merge)
+          end
         end
 
         def macro_label(name)
@@ -437,9 +534,10 @@ module ViewComponent
             definitions ||= inline
             raise ArgumentError, "style_vars requires a Hash or a block" if definitions.empty?
 
-            add_vars(label, definitions)
+            compile_pending_vars
+            ViewComponent::Styles.registry.with_source(caller_locations(1, 1).first.path) { add_vars(label, definitions) }
           end
-          @_styles_resolved = nil
+          invalidate_styles
           nil
         end
       end
@@ -455,8 +553,9 @@ module ViewComponent
 
           raise ArgumentError, "theme expects a Vars object as its first argument" if vars && !vars.is_a?(Vars)
 
-          (@_theme_pending ||= []) << [vars, overrides, block]
-          @_theme_resolved = nil
+          source = block ? block.source_location.first : caller_locations(1, 1).first.path
+          (@_theme_pending ||= []) << [vars, overrides, block, source]
+          invalidate_styles
           nil
         end
       end

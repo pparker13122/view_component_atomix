@@ -10,11 +10,13 @@ module ViewComponent
         @names = {}
         @refs = {}
 
-        definitions.each do |key, value|
-          var = Hashing.var_name(id, key)
-          @names[key.to_sym] = var
-          @refs[key.to_sym] = "var(#{var})"
-          Vars.register(":root", var, value)
+        Styles.registry.transaction do
+          definitions.each do |key, value|
+            var = Hashing.var_name(id, key)
+            @names[key.to_sym] = var
+            @refs[key.to_sym] = "var(#{var})"
+            Vars.register(":root", var, value)
+          end
         end
 
         @names.freeze

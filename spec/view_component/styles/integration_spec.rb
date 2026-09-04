@@ -41,6 +41,13 @@ RSpec.describe "Rails integration", type: :request do
     FileUtils.rm_f(path)
   end
 
+  it "preserves nested logical paths in the stylesheet link tag" do
+    helper = Object.new.extend(ViewComponent::Styles::Helper)
+
+    expect(helper.send(:stylesheet_logical_path, "app/assets/builds/admin/components.css"))
+      .to eq("admin/components")
+  end
+
   it "provides sx in plain views" do
     get "/"
     classes = Nokogiri::HTML(response.body).at_css("#card")["class"].split

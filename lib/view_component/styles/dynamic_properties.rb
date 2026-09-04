@@ -7,16 +7,61 @@ module ViewComponent
     module DynamicProperties
       class Unsupported < ArgumentError; end
 
+      # Associate each lambda with its opening token while parsing, before
+      # modifier expressions can reorder nodes in the resulting syntax tree.
+      class SourceParser < Ripper::SexpBuilderPP
+        attr_reader :lambdas
+
+        def initialize(*)
+          super
+          @lambda_lines = []
+          @lambdas = {}
+          @string_quotes = []
+        end
+
+        def on_heredoc_beg(token)
+          @string_quotes << token
+          super
+        end
+
+        def on_tstring_beg(token)
+          @string_quotes << token
+          super
+        end
+
+        def on_string_literal(content)
+          node = super
+          node << @string_quotes.pop
+          node
+        end
+
+        def on_tlambda(token)
+          @lambda_lines << lineno
+          super
+        end
+
+        def on_lambda(params, body)
+          node = super
+          (@lambdas[@lambda_lines.pop] ||= []) << node
+          node
+        end
+      end
+
+      SOURCE_CACHE_LIMIT = 128
+
       module_function
+
+      @cache = {}
+      @cache_mutex = Mutex.new
 
       def extract(fn, name:, set:)
         path, line = fn.source_location
         raise unsupported(name, set, "source is unavailable") unless path && File.file?(path)
 
-        tree = Ripper.sexp(File.read(path), path)
-        raise unsupported(name, set, "source could not be parsed") unless tree
+        lambdas = parsed_source(path)
+        raise unsupported(name, set, "source could not be parsed") unless lambdas
 
-        candidates = find_lambdas(tree).select { |node| first_line(node) == line }
+        candidates = lambdas.fetch(line, [])
         if candidates.length != 1
           detail = candidates.empty? ? "lambda could not be located at #{path}:#{line}" :
                                       "multiple lambdas start at #{path}:#{line}; put each on its own line"
@@ -28,27 +73,18 @@ module ViewComponent
         raise unsupported(name, set, e.message)
       end
 
-      def find_lambdas(node, found = [])
-        return found unless node.is_a?(Array)
+      def parsed_source(path)
+        stat = File.stat(path)
+        cache_key = [stat.mtime.to_f, stat.size]
+        @cache_mutex.synchronize do
+          cached = @cache[path]
+          return cached.last if cached&.first == cache_key
 
-        found << node if node.first == :lambda
-        node.each { |child| find_lambdas(child, found) if child.is_a?(Array) }
-        found
-      end
-
-      def first_line(node)
-        locations = []
-        collect_locations(node, locations)
-        locations.map(&:first).min
-      end
-
-      def collect_locations(node, locations)
-        return unless node.is_a?(Array)
-
-        if node.first.to_s.start_with?("@") && node[2].is_a?(Array)
-          locations << node[2]
-        else
-          node.each { |child| collect_locations(child, locations) }
+          parser = SourceParser.new(File.read(path), path)
+          parsed = parser.parse && parser.lambdas
+          @cache.shift if !@cache.key?(path) && @cache.size >= SOURCE_CACHE_LIMIT
+          @cache[path] = [cache_key, parsed]
+          parsed
         end
       end
 
@@ -84,8 +120,23 @@ module ViewComponent
           token = find_token(node, :@ident) || find_token(node, :@op) || find_token(node, :@kw)
           token&.[](1)
         when :string_literal
-          content = node.dig(1, 1)
-          content[1] if content&.first == :@tstring_content
+          contents = node[1].drop(1)
+          return unless contents.all? { |part| part.first == :@tstring_content }
+
+          quote = node[2] || '"'
+          return unless ["'", '"'].include?(quote) || quote.match?(/\A%(?:q|Q)?.\z/)
+
+          closing = { "(" => ")", "[" => "]", "{" => "}", "<" => ">" }.fetch(quote[-1], quote[-1])
+          literal = quote + contents.map { |part| part[1] }.join + closing
+          # Reparse the isolated expression before decoding Ruby escapes. Only
+          # a single string containing text tokens is evaluated; interpolation,
+          # calls, and extra expressions are never allowed through this boundary.
+          tree = Ripper.sexp(literal)
+          expressions = tree&.[](1)
+          return unless expressions&.one? && expressions.first.first == :string_literal
+          return unless expressions.first[1].drop(1).all? { |part| part.first == :@tstring_content }
+
+          eval(literal, TOPLEVEL_BINDING, __FILE__, __LINE__) # rubocop:disable Security/Eval
         end
       end
 

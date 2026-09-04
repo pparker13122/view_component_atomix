@@ -4,7 +4,7 @@ module ViewComponent
   module Styles
     class Compiler
       def self.compile(definitions, name:, context: Sheet::EMPTY, breakpoints: {})
-        new(name, context, breakpoints).compile(definitions)
+        Styles.registry.transaction { new(name, context, breakpoints).compile(definitions) }
       end
 
       def initialize(name, context = Sheet::EMPTY, breakpoints = {})
@@ -75,7 +75,11 @@ module ViewComponent
         default = nil
 
         definition.each do |key, value|
-          if key == :default && !value.is_a?(Hash)
+          if key == :default
+            if value.is_a?(Hash)
+              raise ArgumentError,
+                    "Default for style set #{set_name.inspect} must name a member, not define styles"
+            end
             default = value
           elsif breakpoint_key?(key) && value.is_a?(Hash)
             raise ArgumentError,
@@ -117,7 +121,7 @@ module ViewComponent
         return false if Property.known?(Property.normalize_key(key))
         return false if Styles.config.pseudo_map.key?(key) || breakpoint_key?(key)
 
-        value.keys.none? { |k| k == :default || condition_key?(k) }
+        true
       end
 
       def lookup(key)
@@ -125,6 +129,14 @@ module ViewComponent
       end
 
       def compile_enumerated(set_name, members, default)
+        members.each do |member, styles|
+          condition = styles.keys.find { |key| condition_key?(key) && !pseudo_element_key?(key) }
+          next unless condition
+
+          raise ArgumentError,
+                "Enumerated member #{member.inspect} in trait #{set_name.inspect} contains condition #{condition.inspect}. " \
+                "Conditions must be nested under a property. If #{member.inspect} was intended as a property, check its spelling."
+        end
         compiled = members.to_h { |member, styles| [member, compile_style(styles)] }
         if default
           default = default.to_sym

@@ -48,7 +48,7 @@ RSpec.describe ViewComponent::Styles::Theme, type: :component do
       include ViewComponent::Styles
       theme nope: "x"
     end
-    expect { klass.theme }.to raise_error(KeyError, /Unknown var :nope/)
+    2.times { expect { klass.theme }.to raise_error(KeyError, /Unknown var :nope/) }
     expect { klass.theme("x", primary: "y") }.to raise_error(ArgumentError, /Vars object/)
   end
 

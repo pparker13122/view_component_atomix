@@ -16,6 +16,10 @@ module ViewComponent
         value = default if value.nil? || value == false
         return Style::EMPTY if value.nil?
 
+        unless value.respond_to?(:to_sym)
+          raise KeyError, "Unknown member #{value.inspect} for trait #{name.inspect}. Available: #{members.keys.inspect}"
+        end
+
         key = value.to_sym
         return members[key] if members.key?(key)
 

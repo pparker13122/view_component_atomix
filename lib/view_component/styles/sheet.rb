@@ -25,9 +25,9 @@ module ViewComponent
         raise KeyError, "Unknown style set #{name.inspect}. Available sets: #{names.inspect}, vars: #{var_names.inspect}"
       end
 
-      def fetch(name, *args)
+      def fetch(name, *args, **kwargs)
         set = self[name]
-        callable?(set) ? set.call(*args) : set
+        callable?(set) ? set.call(*args, **kwargs) : set
       end
 
       def key?(name)
@@ -68,17 +68,17 @@ module ViewComponent
         ViewComponent::Styles.props(*styles)
       end
 
-      def method_missing(name, *args, &block)
+      def method_missing(name, *args, **kwargs, &block)
         if sets.key?(name)
           set = sets[name]
           if callable?(set)
-            set.call(*args)
-          elsif args.empty?
+            set.call(*args, **kwargs)
+          elsif args.empty? && kwargs.empty?
             set
           else
             raise ArgumentError, "Style set #{name.inspect} is static and takes no arguments"
           end
-        elsif args.empty? && (owner = vars_for(name))
+        elsif args.empty? && kwargs.empty? && (owner = vars_for(name))
           owner[name]
         else
           super

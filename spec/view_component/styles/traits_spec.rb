@@ -33,6 +33,7 @@ RSpec.describe "traits" do
 
     it "raises for unknown members" do
       expect { sheet.size(:xl) }.to raise_error(KeyError, /Unknown member :xl for trait :size.*Available: \[:sm, :regular, :lg\]/)
+      expect { sheet.size(1) }.to raise_error(KeyError, /Unknown member 1 for trait :size/)
     end
 
     it "raises when the default is not a member" do

@@ -16,20 +16,16 @@ module ViewComponent
       end
 
       initializer "view_component.styles.reloader" do
+        Rails.autoloaders.main.on_unload do |_name, owner, source|
+          ViewComponent::Styles.unload!(owner, source)
+        end
         ActiveSupport::Reloader.before_class_unload do
-          # Style declarations under the main autoloader will be evaluated
-          # again. Discard their old rules and class references first so
-          # removed declarations cannot survive a reload.
-          ViewComponent::Styles.registry.clear
-          ViewComponent::Styles.includers.clear
-          ViewComponent::Styles.dynamic_styles.clear
+          ViewComponent::Styles.registry.clear_reloadable
         end
       end
 
       config.to_prepare do
-        app = Rails.application
-        reloading = app.config.respond_to?(:reloading_enabled?) ? app.config.reloading_enabled? : !app.config.cache_classes
-        ViewComponent::Styles.eager_load! if reloading
+        ViewComponent::Styles.eager_load! if ViewComponent::Styles.config.inline?
       end
 
       rake_tasks do

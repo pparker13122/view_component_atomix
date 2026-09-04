@@ -9,23 +9,29 @@ module ViewComponent
         @name = name
         @set = set
         @fn = fn
+        @required_arguments = fn.parameters.any? { |kind, _| kind == :req || kind == :keyreq }
         @vars = {}
         @mutex = Mutex.new
         @declared_properties = normalize_properties(properties)
         @compiled_properties = @declared_properties
         compile! if Styles.config.inline?
-        Styles.dynamic_styles << self
+        Styles.registry.after_commit { Styles.dynamic_styles << self }
+      end
+
+      def source_path
+        @fn.source_location&.first
       end
 
       def arity
         @fn.arity
       end
 
-      def call(*args)
-        return Style::EMPTY if args.empty? && arity != 0
-        return Style::EMPTY if !args.empty? && args.all? { |arg| arg.nil? || arg == false }
+      def call(*args, **kwargs)
+        return Style::EMPTY if args.empty? && kwargs.empty? && required_arguments?
+        values = args + kwargs.values
+        return Style::EMPTY if !values.empty? && values.all? { |arg| arg.nil? || arg == false }
 
-        result = @fn.call(*args)
+        result = @fn.call(*args, **kwargs)
         unless result.is_a?(Hash)
           raise ArgumentError, "Dynamic style #{set.inspect} must return a Hash, got #{result.class}"
         end
@@ -55,11 +61,17 @@ module ViewComponent
         @mutex.synchronize do
           @compiled_properties ||= DynamicProperties.extract(@fn, name: name, set: set)
         end
-        @compiled_properties.each { |property| ensure_registered(property) }
+        Styles.registry.with_source(@fn.source_location&.first) do
+          @compiled_properties.each { |property| ensure_registered(property) }
+        end
         self
       end
 
       private
+
+      def required_arguments?
+        @required_arguments
+      end
 
       def normalize_properties(properties)
         return unless properties

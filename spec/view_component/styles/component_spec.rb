@@ -1,6 +1,54 @@
 # frozen_string_literal: true
 
 RSpec.describe ViewComponent::Styles, type: :component do
+  it "retains failed and subsequent declarations until compilation succeeds" do
+    ready = false
+    successful_calls = 0
+    klass = Class.new(ViewComponent::Base) do
+      include ViewComponent::Styles
+      styles do
+        successful_calls += 1
+        trait :first, padding: 2
+      end
+      styles do
+        styles # A reentrant read must not leave a cached partial sheet after failure.
+        raise "not ready" unless ready
+        trait :second, color: "red"
+      end
+      styles { trait :third, margin: 4 }
+    end
+    2.times { expect { klass.styles }.to raise_error("not ready") }
+    ready = true
+    expect(klass.styles.names).to eq(%i[first second third])
+    expect(successful_calls).to eq(1)
+  end
+
+  it "serializes the first resolution of a component's styles" do
+    started = Queue.new
+    release = Queue.new
+    results = Queue.new
+    klass = Class.new(ViewComponent::Base) do
+      include ViewComponent::Styles
+      styles do
+        started << true
+        release.pop
+        { root: { color: "red" } }
+      end
+    end
+
+    compiling = Thread.new { klass.styles }
+    started.pop
+    concurrent = Thread.new do
+      results << klass.styles.root
+    rescue StandardError => error
+      results << error
+    end
+    release << true
+    [compiling, concurrent].each(&:join)
+
+    expect(results.pop).to be_a(ViewComponent::Styles::Style)
+  end
+
   it "renders merged classes and dynamic inline vars" do
     render_inline(ButtonComponent.new(variant: :primary, width: 120)) { "Save" }
 

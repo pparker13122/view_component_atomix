@@ -3,6 +3,34 @@
 RSpec.describe ViewComponent::Styles::Variables, type: :component do
   let!(:registry) { with_fresh_registry }
 
+  it "invalidates cached descendants when parent variables are extended" do
+    parent = Class.new do
+      include ViewComponent::Styles
+      style_vars accent: "red"
+    end
+    child = Class.new(parent)
+    grandchild = Class.new(child)
+    expect(grandchild.styles.var_names).to eq([:accent])
+    parent.style_vars gap: 8
+    expect(grandchild.styles.gap).to eq(parent.styles.gap)
+    parent.style_vars { { gutter: 12 } }
+    expect(grandchild.styles.gutter).to eq(parent.styles.gutter)
+  end
+
+  it "retries variable blocks after an evaluation failure" do
+    ready = false
+    klass = Class.new do
+      include ViewComponent::Styles::Variables
+      style_vars do
+        raise "not ready" unless ready
+        { gap: 8 }
+      end
+    end
+    2.times { expect { klass.styles }.to raise_error("not ready") }
+    ready = true
+    expect(klass.styles.var_names).to eq([:gap])
+  end
+
   it "declares vars readable through styles and emits them on :root" do
     klass = Class.new(ViewComponent::Base) do
       include ViewComponent::Styles

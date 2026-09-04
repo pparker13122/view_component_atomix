@@ -245,6 +245,8 @@ trait :box, ->(expanded) {
 }
 ```
 
+Dynamic values become CSS custom-property values. Do not pass untrusted user input directly; validate it against the values or formats your property accepts first.
+
 Helper-built hashes and conditional hash shapes hide their keys from source compilation. For those cases, declare the complete property set explicitly:
 
 ```ruby
@@ -512,7 +514,7 @@ The emitted CSS is one class per set of variables the theme touches, for example
 - Override values can be conditional hashes, so a theme can change a variable only under `dark` or a breakpoint.
 - Unknown keys raise `KeyError` when the theme is first read.
 - `theme` with no declarations returns an empty style, so `styles.props(theme)` is always safe.
-- Subclasses inherit the parent's theme and can override keys.
+- Subclasses inherit the parent's theme. Declaring a theme for the same `Vars` set replaces that entire inherited theme, including overrides for keys omitted by the child. Repeat any parent overrides you want to retain; themes targeting other variable sets remain inherited.
 - Two themes for the same `Vars` set are mutually exclusive when merged, and the last one wins. Themes nest: an inner wrapper's theme overrides an outer one for its subtree.
 
 For plain Ruby, `ViewComponent::Styles.create_theme(vars, **overrides)` builds the same `Style` from an explicit `Vars` object, and `vars.theme(**overrides)` is shorthand for it.
@@ -594,3 +596,7 @@ bundle exec rspec
 ```
 
 The dummy app in `spec/dummy` exercises the railtie, the inline and file modes, and the rake task.
+
+`ViewComponent::Styles.reset!` is a full reset for isolated environments: it clears registered CSS, tracked dynamic styles, configured variables, configuration values, and all style/variable/theme declarations and compiled caches on existing tracked owners. Existing accessor names remain installed, so those owners can accept new declarations. Previously returned standalone `Style`, `Sheet`, and `Vars` objects are obsolete after reset and must be recreated. Configuration object identity is preserved for Rails. Use the normal Rails reloader for development reloads instead.
+
+A failed compilation does not publish partial CSS. Corrected declarations can be retried; separately resolved dependencies that succeeded remain registered. Declaration blocks are Ruby code: their own side effects and successful explicit calls to `create` or `define_vars` are not rolled back. Style and variable declarations retain successful earlier declarations when a later one fails.
