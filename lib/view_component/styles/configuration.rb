@@ -45,6 +45,10 @@ module ViewComponent
       alias inline? inline
 
       def initialize
+        reset!
+      end
+
+      def reset!
         @class_prefix = "vc"
         @breakpoints = {}
         @pseudo_map = DEFAULT_PSEUDO_MAP.dup

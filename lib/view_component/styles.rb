@@ -18,6 +18,7 @@ require_relative "styles/configuration"
 require_relative "styles/hashing"
 require_relative "styles/property"
 require_relative "styles/known_properties"
+require_relative "styles/immutable"
 require_relative "styles/rule"
 require_relative "styles/registry"
 require_relative "styles/weak_collection"
@@ -31,6 +32,12 @@ require_relative "styles/sheet"
 require_relative "styles/vars"
 require_relative "styles/compiler"
 require_relative "styles/helper"
+require_relative "styles/declaration_queue"
+require_relative "styles/owner_state"
+require_relative "styles/accessors"
+require_relative "styles/theme_compiler"
+require_relative "styles/theme_resolution"
+require_relative "styles/base"
 
 module ViewComponent
   module Styles
@@ -84,14 +91,7 @@ module ViewComponent
       def create_theme(vars, **overrides)
         raise ArgumentError, "create_theme expects a Vars object" unless vars.is_a?(Vars)
 
-        digest_input = overrides.sort_by { |k, _| k.to_s }.map { |k, v| "#{k}=#{v.inspect}" }
-        class_name = Hashing.class_name("theme", vars.id, digest_input)
-        registry.transaction do
-          overrides.each do |key, value|
-            Vars.register(".#{class_name}", vars.var_name(key), value)
-          end
-        end
-        Style.new({ "theme:#{vars.id}" => [class_name] })
+        ThemeCompiler.compile(vars.id, vars.names, overrides)
       end
 
       def vars
@@ -167,15 +167,11 @@ module ViewComponent
       # Standalone Style/Sheet/Vars objects must be recreated by the caller.
       def reset!
         RESOLUTION_MONITOR.synchronize do
-          owners.each do |owner|
-            owner.instance_variables.grep(/\A@_(styles_(own|resolved|blocks|breakpoints)|vars_blocks|theme_(own|resolved|pending)|companion_styles_module)\z/).each do |ivar|
-              owner.remove_instance_variable(ivar)
-            end
-          end
+          owners.each { |owner| owner.send(:styles_state).reset! }
           registry.clear
           dynamic_styles.clear
           @vars = nil
-          config.send(:initialize) # Keep Rails configuration references valid.
+          config.reset! # Keep Rails configuration references valid.
         end
       end
 
@@ -186,8 +182,7 @@ module ViewComponent
       def invalidate_caches!
         RESOLUTION_MONITOR.synchronize do
           owners.each do |owner|
-            owner.instance_variable_set(:@_styles_resolved, nil)
-            owner.instance_variable_set(:@_theme_resolved, nil)
+            owner.send(:styles_state).invalidate!
           end
         end
       end
@@ -235,288 +230,6 @@ module ViewComponent
       end
     end
 
-    module Base
-      extend ActiveSupport::Concern
-
-      ACCESSOR_SUFFIX = /_(styles?|theme|vars|variables)\z/.freeze
-
-      included do
-        ViewComponent::Styles.includers << self
-        extend Mixin unless is_a?(Class)
-      end
-
-      class_methods do
-        def styles_method(name = nil)
-          return current_styles_method if name.nil?
-
-          @_styles_method_explicit = true
-          install_styles_method(name)
-        end
-
-        private
-
-        def install_styles_method(name)
-          name = name.to_sym
-          previous = current_styles_method
-          if previous && previous != name
-            singleton_class.send(:undef_method, previous) if singleton_class.method_defined?(previous)
-            undef_method(previous) if method_defined?(previous)
-          end
-
-          define_singleton_method(name) { |definitions = nil, &block| define_styles(definitions, &block) }
-          define_method(name) { self.class.send(:resolved_styles) }
-          @_styles_method = name
-          @_styles_resolved = nil
-          styles_mixins.each { |mod| define_mixin_accessors(mod) }
-          name
-        end
-
-        def current_styles_method
-          return @_styles_method if defined?(@_styles_method)
-
-          is_a?(Class) && superclass.respond_to?(:styles_method) ? superclass.styles_method : nil
-        end
-
-        def styles_method_explicit?
-          defined?(@_styles_method_explicit) && @_styles_method_explicit
-        end
-
-        def styles_mixins
-          @_styles_mixins ||= []
-        end
-
-        def accessor_base(mod)
-          mod.name.underscore.tr("/", "_").sub(ACCESSOR_SUFFIX, "")
-        end
-
-        def styles_accessor_for(mod)
-          return mod.styles_method if mod.name.nil? || mod.send(:styles_method_explicit?)
-
-          :"#{accessor_base(mod)}_styles"
-        end
-
-        def theme_accessor_for(mod)
-          return :theme if mod.name.nil?
-
-          :"#{accessor_base(mod)}_theme"
-        end
-
-        def companion_styles_module
-          return @_companion_styles_module if @_companion_styles_module
-          return unless is_a?(Class) && name
-
-          candidate = "#{name}Styles".safe_constantize
-          return unless candidate.instance_of?(Module) && candidate < Base
-
-          @_companion_styles_module = candidate
-        end
-
-        def companion_styles
-          mod = companion_styles_module
-          mod && mod < Variables ? mod.send(:resolved_styles) : Sheet::EMPTY
-        end
-
-        def companion_theme
-          mod = companion_styles_module
-          mod && mod < Theme ? mod.send(:resolved_theme) : Style::EMPTY
-        end
-
-        def add_styles_mixin(mod)
-          styles_mixins << mod
-          @_styles_resolved = nil
-          @_theme_resolved = nil
-          define_mixin_accessors(mod)
-        end
-
-        def define_mixin_accessors(mod)
-          if mod < Variables
-            accessor = styles_accessor_for(mod)
-            unless accessor == current_styles_method
-              define_singleton_method(accessor) { mod.send(:resolved_styles) }
-              define_method(accessor) { mod.send(:resolved_styles) }
-
-              leaked = mod.styles_method
-              undef_method(leaked) if leaked != accessor && leaked != current_styles_method && method_defined?(leaked)
-            end
-          end
-
-          return unless mod < Theme
-
-          accessor = theme_accessor_for(mod)
-          return if accessor == :theme
-
-          define_singleton_method(accessor) { mod.send(:resolved_theme) }
-          define_method(accessor) { mod.send(:resolved_theme) }
-        end
-
-        def define_styles(definitions = nil, &block)
-          return resolved_styles if definitions.nil? && block.nil?
-
-          unless self < ViewComponent::Styles
-            raise ArgumentError, "#{self} includes ViewComponent::Styles::Variables only. " \
-                                 "Include ViewComponent::Styles to declare style sets."
-          end
-
-          source = block ? block.source_location.first : caller_locations(2, 1).first.path
-          (@_styles_blocks ||= []) << [block || proc { definitions }, source]
-          invalidate_styles
-          nil
-        end
-
-        def invalidate_styles
-          ViewComponent::Styles.invalidate_caches!
-        end
-
-        def resolved_styles
-          styles_resolution_monitor.synchronize do
-            if @_styles_resolving
-              compile_pending_vars
-              return styles_context
-            end
-            return @_styles_resolved if @_styles_resolved
-
-            begin
-              @_styles_resolving = true
-              compile_pending_styles
-              @_styles_resolved = styles_context
-            ensure
-              @_styles_resolving = false
-            end
-          end
-        end
-
-        def styles_resolution_monitor
-          RESOLUTION_MONITOR
-        end
-
-        def inherited_styles
-          return Sheet::EMPTY unless is_a?(Class) && superclass.respond_to?(:resolved_styles, true)
-
-          superclass.send(:resolved_styles)
-        end
-
-        def compile_pending_styles
-          compile_pending_vars
-          blocks = @_styles_blocks || []
-          @_styles_blocks = []
-          blocks.each_with_index do |(block, source), index|
-            begin
-              ViewComponent::Styles.registry.with_source(source) do
-                definitions, breakpoints = Builder.evaluate(self, block)
-                ViewComponent::Styles.registry.transaction(independent: true) do
-                  previous_breakpoints = @_styles_breakpoints
-                  begin
-                    add_breakpoints(breakpoints)
-                    add_styles(definitions)
-                  rescue StandardError
-                    @_styles_breakpoints = previous_breakpoints
-                    raise
-                  end
-                end
-              end
-            rescue StandardError
-              @_styles_blocks = blocks.drop(index) + @_styles_blocks
-              @_styles_resolved = nil
-              raise
-            end
-          end
-        end
-
-        def compile_pending_vars
-          var_blocks = @_vars_blocks || []
-          @_vars_blocks = []
-          var_blocks.each_with_index do |(label, block), index|
-            begin
-              ViewComponent::Styles.registry.with_source(block.source_location.first) do
-                definitions = block.call
-                ViewComponent::Styles.registry.transaction(independent: true) { add_vars(label, definitions) }
-              end
-            rescue StandardError
-              @_vars_blocks = var_blocks.drop(index) + @_vars_blocks
-              @_styles_resolved = nil
-              raise
-            end
-          end
-        end
-
-        def add_styles(definitions)
-          sheet = Compiler.compile(definitions, name: name || "anonymous", context: styles_context,
-                                                breakpoints: styles_breakpoints)
-          @_styles_own = @_styles_own ? @_styles_own.merge(sheet) : sheet
-        end
-
-        def add_breakpoints(map)
-          return if map.empty?
-
-          @_styles_breakpoints = styles_breakpoints.merge(map)
-        end
-
-        def styles_breakpoints
-          inherited = if is_a?(Class) && superclass.respond_to?(:styles_breakpoints, true)
-                        superclass.send(:styles_breakpoints)
-                      else
-                        {}
-                      end
-          inherited.merge(@_styles_breakpoints || {})
-        end
-
-        def styles_context
-          merged = styles_mixins.select { |mod| mod < Variables && styles_accessor_for(mod) == current_styles_method }
-          layers = [inherited_styles, companion_styles, *merged.map { |mod| mod.send(:resolved_styles) },
-                    @_styles_own || Sheet::EMPTY]
-          layers.reduce(&:merge)
-        end
-
-        def add_vars(label, definitions)
-          vars = Vars.new(label, definitions)
-          sheet = Sheet.new({}, vars.names.keys.to_h { |key| [key, vars] })
-          @_styles_own = @_styles_own ? @_styles_own.merge(sheet) : sheet
-        end
-
-        def resolved_theme
-          styles_resolution_monitor.synchronize do
-            return @_theme_resolved if @_theme_resolved
-
-            pending = @_theme_pending || []
-            @_theme_pending = []
-            pending.each_with_index do |(vars, overrides, block, source), index|
-              begin
-                built = ViewComponent::Styles.registry.with_source(source) { build_theme(vars, overrides, block) }
-                @_theme_own = (@_theme_own || Style::EMPTY).merge(built)
-              rescue StandardError
-                @_theme_pending = pending.drop(index) + @_theme_pending
-                raise
-              end
-            end
-
-            inherited = is_a?(Class) && superclass.respond_to?(:resolved_theme, true) ? superclass.send(:resolved_theme) : Style::EMPTY
-            merged = styles_mixins.select { |mod| mod < Theme && theme_accessor_for(mod) == :theme }
-            @_theme_resolved = [inherited, companion_theme, *merged.map { |mod| mod.send(:resolved_theme) }]
-                               .reduce(Style::EMPTY, :merge).merge(@_theme_own || Style::EMPTY)
-          end
-        end
-
-        def build_theme(vars, overrides, block)
-          overrides = block.call if block
-          return ViewComponent::Styles.create_theme(vars, **overrides) if vars
-
-          grouped = overrides.group_by do |key, _|
-            resolved_styles.vars_for(key) ||
-              raise(KeyError, "Unknown var #{key.inspect} in theme for #{self}. Available vars: #{resolved_styles.var_names.inspect}")
-          end
-          ViewComponent::Styles.registry.transaction(independent: true) do
-            grouped.map { |owner, pairs| ViewComponent::Styles.create_theme(owner, **pairs.to_h) }.reduce(Style::EMPTY, :merge)
-          end
-        end
-
-        def macro_label(name)
-          return name.to_s if name
-
-          self.name || "anonymous:#{caller_locations(2, 1).first&.then { |l| "#{l.path}:#{l.lineno}" }}"
-        end
-      end
-    end
-
     module Variables
       extend ActiveSupport::Concern
       include Base
@@ -529,9 +242,12 @@ module ViewComponent
         def style_vars(definitions = nil, name: nil, **inline, &block)
           label = macro_label(name)
           if block
-            (@_vars_blocks ||= []) << [label, block]
+            styles_state.variables << DeclarationQueue::VariableDeclaration.new(
+              label: label, block: block, source: block.source_location.first
+            )
           else
-            definitions ||= inline
+            definitions = inline if definitions.nil?
+            Vars.validate_definitions!(definitions)
             raise ArgumentError, "style_vars requires a Hash or a block" if definitions.empty?
 
             compile_pending_vars
@@ -554,7 +270,9 @@ module ViewComponent
           raise ArgumentError, "theme expects a Vars object as its first argument" if vars && !vars.is_a?(Vars)
 
           source = block ? block.source_location.first : caller_locations(1, 1).first.path
-          (@_theme_pending ||= []) << [vars, overrides, block, source]
+          styles_state.themes << DeclarationQueue::ThemeDeclaration.new(
+            vars: vars, overrides: overrides, block: block, source: source
+          )
           invalidate_styles
           nil
         end

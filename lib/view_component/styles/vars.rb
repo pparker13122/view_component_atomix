@@ -6,7 +6,8 @@ module ViewComponent
       attr_reader :id, :names
 
       def initialize(id, definitions)
-        @id = id
+        self.class.validate_definitions!(definitions)
+        @id = Immutable.copy(id)
         @names = {}
         @refs = {}
 
@@ -19,8 +20,8 @@ module ViewComponent
           end
         end
 
-        @names.freeze
-        @refs.freeze
+        @names = Immutable.copy(@names)
+        @refs = Immutable.copy(@refs)
         freeze
       end
 
@@ -50,6 +51,12 @@ module ViewComponent
 
       def theme(**overrides)
         Styles.create_theme(self, **overrides)
+      end
+
+      def self.validate_definitions!(definitions)
+        return if definitions.is_a?(Hash)
+
+        raise ArgumentError, "Variable definitions must be a Hash, got #{definitions.class}"
       end
 
       def self.register(selector, var, value, conditions = [])

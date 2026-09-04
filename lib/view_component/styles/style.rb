@@ -6,8 +6,8 @@ module ViewComponent
       attr_reader :classes, :inline
 
       def initialize(classes = {}, inline = {})
-        @classes = classes.freeze
-        @inline = inline.freeze
+        @classes = Immutable.copy(classes)
+        @inline = Immutable.copy(inline)
         freeze
       end
 
@@ -36,8 +36,10 @@ module ViewComponent
 
       def to_attrs
         attrs = Attrs.new
-        attrs[:class] = class_names if class_names
-        attrs[:style] = inline_style if inline_style
+        names = class_names
+        declarations = inline_style
+        attrs[:class] = names if names
+        attrs[:style] = declarations if declarations
         attrs
       end
 

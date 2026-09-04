@@ -3,6 +3,18 @@
 module ViewComponent
   module Styles
     class Registry
+      Registration = Struct.new(:rule, :source, keyword_init: true)
+      Transaction = Struct.new(:registrations, :callbacks, keyword_init: true) do
+        def initialize(registrations: [], callbacks: [])
+          super
+        end
+
+        def absorb(other)
+          registrations.concat(other.registrations)
+          callbacks.concat(other.callbacks)
+        end
+      end
+
       def initialize
         @mutex = Mutex.new
         @rules = {}
@@ -10,18 +22,18 @@ module ViewComponent
       end
 
       def add(rule)
-        entry = [rule, registration_source]
+        entry = Registration.new(rule: rule, source: registration_source)
         if (pending = transactions.last)
-          pending << entry
+          pending.registrations << entry
         else
-          commit([entry])
+          commit(Transaction.new(registrations: [entry]))
         end
         rule
       end
 
       def after_commit(&block)
         if (pending = transactions.last)
-          pending << block
+          pending.callbacks << block
         else
           block.call
         end
@@ -31,11 +43,11 @@ module ViewComponent
       # uses independent: true because its successful result is cached even if
       # the declaration which requested it subsequently fails.
       def transaction(independent: false)
-        pending = []
+        pending = Transaction.new
         transactions << pending
         result = yield
         if transactions.length > 1 && !independent
-          transactions[-2].concat(pending)
+          transactions[-2].absorb(pending)
         else
           commit(pending)
         end
@@ -93,23 +105,30 @@ module ViewComponent
         Thread.current[:view_component_styles_transactions][object_id] ||= []
       end
 
-      def commit(entries)
+      def commit(transaction)
         @mutex.synchronize do
-          entries.reject { |entry| entry.is_a?(Proc) }.each do |rule, source|
-            # Root variables are assignments, unlike content-addressed atoms.
-            if rule.selector == ":root"
-              @rules.delete_if do |existing, sources|
-                next false unless existing.selector == rule.selector && existing.property == rule.property && existing.conditions == rule.conditions
-                sources.delete(source)
-                sources.empty?
-              end
-            end
-            sources = rule.selector == ":root" ? @rules.delete(rule) : @rules[rule]
-            @rules[rule] = (sources || Set.new).add(source)
-          end
-          @css = nil unless entries.empty?
+          transaction.registrations.each { |entry| register(entry.rule, entry.source) }
+          @css = nil unless transaction.registrations.empty?
         end
-        entries.grep(Proc).each(&:call)
+        transaction.callbacks.each(&:call)
+      end
+
+      def register(rule, source)
+        replace_root_assignment(rule, source) if rule.selector == ":root"
+        sources = rule.selector == ":root" ? @rules.delete(rule) : @rules[rule]
+        @rules[rule] = (sources || Set.new).add(source)
+      end
+
+      # Root variables are assignments, unlike content-addressed atoms. Remove
+      # only this source's previous assignment; other owners may still use it.
+      def replace_root_assignment(rule, source)
+        @rules.delete_if do |existing, sources|
+          next false unless existing.selector == rule.selector &&
+                            existing.property == rule.property && existing.conditions == rule.conditions
+
+          sources.delete(source)
+          sources.empty?
+        end
       end
 
       def reloadable_roots

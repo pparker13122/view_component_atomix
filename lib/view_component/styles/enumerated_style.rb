@@ -6,9 +6,9 @@ module ViewComponent
       attr_reader :name, :members, :default
 
       def initialize(name:, members:, default: nil)
-        @name = name
-        @members = members.freeze
-        @default = default
+        @name = Immutable.copy(name)
+        @members = Immutable.copy(members)
+        @default = Immutable.copy(default)
         freeze
       end
 

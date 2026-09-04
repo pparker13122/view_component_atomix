@@ -33,12 +33,13 @@ RSpec.describe "view_component:styles:build" do
   it "compiles dynamic rules before the trait receives a runtime value" do
     with_fresh_registry
     allow(ViewComponent::Styles.config).to receive(:inline?).and_return(false)
-    ViewComponent::Styles::DynamicStyle.new(
-      name: "BuildSpec", set: :sized, fn: ->(width) { { width: width } }
-    )
+    sheet = ViewComponent::Styles.create(name: "BuildSpec", sized: ->(width) { { width: width } })
+    GC.start
 
     expect { Rake::Task["view_component:styles:build"].invoke }.to output(/Wrote \d+ rules to/).to_stdout
     css = output_path.read
+    rendered = sheet.sized(123)
+    expect(css).to include(".#{rendered.class_names}{width:var(#{rendered.inline.keys.first})}")
 
     # Model a separately booted production web process. It has the same
     # definition identity but does not participate in the asset build.

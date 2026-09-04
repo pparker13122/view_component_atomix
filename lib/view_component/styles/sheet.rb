@@ -6,8 +6,8 @@ module ViewComponent
       attr_reader :sets, :vars
 
       def initialize(sets = {}, vars = {})
-        @sets = sets.freeze
-        @vars = vars.freeze
+        @sets = Immutable.copy(sets)
+        @vars = Immutable.copy(vars)
         freeze
       end
 
@@ -26,8 +26,7 @@ module ViewComponent
       end
 
       def fetch(name, *args, **kwargs)
-        set = self[name]
-        callable?(set) ? set.call(*args, **kwargs) : set
+        invoke(name, self[name], *args, **kwargs)
       end
 
       def key?(name)
@@ -70,14 +69,7 @@ module ViewComponent
 
       def method_missing(name, *args, **kwargs, &block)
         if sets.key?(name)
-          set = sets[name]
-          if callable?(set)
-            set.call(*args, **kwargs)
-          elsif args.empty? && kwargs.empty?
-            set
-          else
-            raise ArgumentError, "Style set #{name.inspect} is static and takes no arguments"
-          end
+          invoke(name, sets[name], *args, **kwargs)
         elsif args.empty? && kwargs.empty? && (owner = vars_for(name))
           owner[name]
         else
@@ -90,6 +82,13 @@ module ViewComponent
       end
 
       private
+
+      def invoke(name, set, *args, **kwargs)
+        return set.call(*args, **kwargs) if callable?(set)
+        return set if args.empty? && kwargs.empty?
+
+        raise ArgumentError, "Style set #{name.inspect} is static and takes no arguments"
+      end
 
       def callable?(set)
         set.is_a?(DynamicStyle) || set.is_a?(EnumeratedStyle)

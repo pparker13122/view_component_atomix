@@ -146,3 +146,32 @@ RSpec.describe ViewComponent::Styles::Variables, type: :component do
     end
   end
 end
+
+RSpec.describe "variable definition validation" do
+  let!(:registry) { with_fresh_registry }
+
+  [123, "bad", false, []].each do |invalid|
+    it "rejects #{invalid.inspect} consistently in immediate, deferred and standalone declarations" do
+      owner = Class.new { include ViewComponent::Styles::Variables }
+      expect { owner.style_vars(invalid) }.to raise_error(ArgumentError, /Variable definitions must be a Hash/)
+      expect { ViewComponent::Styles::Vars.new("invalid", invalid) }
+        .to raise_error(ArgumentError, /Variable definitions must be a Hash/)
+      owner.style_vars { invalid }
+      2.times do
+        expect { owner.styles }.to raise_error(ArgumentError, /Variable definitions must be a Hash/)
+      end
+      expect(registry.size).to eq(0)
+    end
+  end
+
+  it "retries an invalid deferred result after correction" do
+    definitions = nil
+    owner = Class.new do
+      include ViewComponent::Styles::Variables
+      style_vars { definitions }
+    end
+    expect { owner.styles }.to raise_error(ArgumentError, /Variable definitions must be a Hash/)
+    definitions = { accent: "red" }
+    expect(owner.styles.var_names).to eq([:accent])
+  end
+end

@@ -365,6 +365,16 @@ end
 </div>
 ```
 
+For dynamic traits, retain the sheet constant until the asset build runs so the compiler can discover its properties. A literal-hash lambda needs no explicit `dynamic:` list:
+
+```ruby
+SHEET = ViewComponent::Styles.create(box: ->(width) { { width: width } })
+# At render time:
+ViewComponent::Styles.props(SHEET.box(120))
+```
+
+Keeping only the result of `create(...).box(120)` allows the declaration to be garbage-collected before production CSS compilation.
+
 The same constants work inside a component template, with or without `include ViewComponent::Styles`:
 
 ```ruby
@@ -604,3 +614,15 @@ The dummy app in `spec/dummy` exercises the railtie, the inline and file modes, 
 `ViewComponent::Styles.reset!` is a full reset for isolated environments: it clears registered CSS, tracked dynamic styles, configured variables, configuration values, and all style/variable/theme declarations and compiled caches on existing tracked owners. Existing accessor names remain installed, so those owners can accept new declarations. Previously returned standalone `Style`, `Sheet`, and `Vars` objects are obsolete after reset and must be recreated. Configuration object identity is preserved for Rails. Use the normal Rails reloader for development reloads instead.
 
 A failed compilation does not publish partial CSS. Corrected declarations can be retried; separately resolved dependencies that succeeded remain registered. Declaration blocks are Ruby code: their own side effects and successful explicit calls to `create` or `define_vars` are not rolled back. Style and variable declarations retain successful earlier declarations when a later one fails.
+
+Value objects own copies of their containers and strings. `Style`, `Rule`, and `Vars` expose frozen data; `Sheet` and `EnumeratedStyle` copy their maps while retaining the style objects they reference. Build a new value or merge styles instead of mutating exposed data. `Sheet#fetch` accepts the same arguments as the corresponding trait method, including rejecting arguments for static traits.
+
+For contributors, declaration handling is organized by responsibility:
+
+- `Accessors` installs readers and resolves module/companion names; `Base` resolves style declarations and inheritance.
+- `OwnerState` owns declaration queues and compiled caches. Reset clears declarations and caches while leaving installed accessors intact.
+- `DeclarationQueue` restores failed and remaining declarations ahead of newly enqueued work. Resolvers control evaluation and transaction boundaries under the shared resolution monitor.
+- `ThemeResolution` combines inherited and local themes; `ThemeCompiler` registers overrides for one variable group.
+- `Registry` stores registrations and commit callbacks separately. Nested transactions join their parent unless explicitly independent; callbacks run after rules are committed, outside the registry mutex.
+
+Tests are grouped by subsystem, with focused lifecycle, transaction, and CSS-output specs for behavior spanning multiple modules.

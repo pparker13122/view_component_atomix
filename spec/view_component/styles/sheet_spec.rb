@@ -36,3 +36,23 @@ RSpec.describe ViewComponent::Styles::Sheet do
     expect(sheet.names).to eq(%i[base sized])
   end
 end
+
+RSpec.describe "sheet invocation consistency" do
+  before { with_fresh_registry }
+
+  it "rejects positional and keyword arguments for static styles through either accessor" do
+    sheet = ViewComponent::Styles.create(base: { color: "red" })
+    [-> { sheet.base(1) }, -> { sheet.fetch(:base, 1) },
+     -> { sheet.base(unexpected: true) }, -> { sheet.fetch(:base, unexpected: true) }].each do |call|
+      expect(&call).to raise_error(ArgumentError, /static and takes no arguments/)
+    end
+    expect(sheet.fetch(:base)).to equal(sheet.base)
+    expect(sheet.fetch(nil)).to be_nil
+  end
+
+  it "selects enumerated members through either accessor" do
+    sheet = ViewComponent::Styles.create(tone: { subtle: { color: "gray" }, loud: { color: "red" } })
+    expect(sheet.fetch(:tone, :loud)).to eq(sheet.tone(:loud))
+    expect { sheet.fetch(:tone, :missing) }.to raise_error(KeyError)
+  end
+end

@@ -5,10 +5,10 @@ module ViewComponent
     Rule = Struct.new(:selector, :property, :value, :conditions, :priority, keyword_init: true) do
       def initialize(selector:, property:, value:, conditions: [], priority: nil)
         super(
-          selector: selector,
-          property: property,
-          value: value,
-          conditions: conditions.freeze,
+          selector: Immutable.copy(selector),
+          property: Immutable.copy(property),
+          value: Immutable.copy(value),
+          conditions: Immutable.copy(conditions),
           priority: priority || Property.priority(property, conditions)
         )
         freeze

@@ -97,3 +97,45 @@ RSpec.describe "shorthand cascade ordering" do
     end
   end
 end
+
+RSpec.describe "registry transaction boundaries" do
+  let(:registry) { ViewComponent::Styles::Registry.new }
+
+  def rule(value)
+    ViewComponent::Styles::Rule.new(selector: ".#{value}", property: "color", value: value)
+  end
+
+  it "publishes nested rules before running callbacks in registration order" do
+    calls = []
+    registry.transaction do
+      registry.add(rule("red"))
+      registry.after_commit { calls << [:outer, registry.size] }
+      registry.transaction do
+        registry.add(rule("blue"))
+        registry.after_commit { calls << [:inner, registry.size] }
+      end
+      expect(registry.size).to eq(0)
+      expect(calls).to be_empty
+    end
+    expect(calls).to eq([[:outer, 2], [:inner, 2]])
+  end
+
+  it "retains independently committed rules and callbacks when the outer declaration fails" do
+    calls = []
+    expect do
+      registry.transaction do
+        registry.add(rule("red"))
+        registry.after_commit { calls << :outer }
+        registry.transaction(independent: true) do
+          registry.add(rule("blue"))
+          registry.after_commit { calls << :independent }
+        end
+        raise "failed"
+      end
+    end.to raise_error("failed")
+    expect(registry.rules.map(&:value)).to eq(["blue"])
+    expect(calls).to eq([:independent])
+    registry.transaction { registry.add(rule("green")) }
+    expect(registry.rules.map(&:value)).to eq(%w[blue green])
+  end
+end
