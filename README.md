@@ -120,9 +120,9 @@ end
 
 ### Values
 
-- **Numbers** become `px` except for unitless properties such as `line_height`, `opacity`, `z_index`, `flex` and `font_weight`. Zero stays `0`.
+- **Numbers** become `px` except for unitless properties such as `line_height`, `opacity`, `z_index`, `flex` and `font_weight`. Time properties such as `transition_duration` use milliseconds, including `0ms`. Custom properties stay unitless. Zero lengths stay `0`.
 - **Symbols** become kebab-case values, so `display: :inline_block` works.
-- **Arrays** emit fallback declarations in order: `position: %w[sticky fixed]`.
+- **Arrays** in static traits emit fallback declarations in order: `position: %w[sticky fixed]`.
 - **nil** unsets the property, removing whatever an earlier style set.
 - **Keys** are snake_case symbols (`border_radius`), camelCase strings, or raw CSS names. Custom properties like `"--gap"` pass through.
 
@@ -231,7 +231,7 @@ styles do
 end
 
 styles.box(120, 40)   # class="vc…" style="--vc…:120px;--vc…:40px"
-styles.box(nil)       # empty style
+styles.box(nil, nil)  # unsets width and height
 ```
 
 The lambda's source is parsed without executing it. Its body must be one literal Hash with static property keys; values can contain arbitrary runtime expressions. This lets asset precompilation discover every variable-backed rule while requests supply only the values. Keep optional keys in the hash and return `nil` when they do not apply:
@@ -244,6 +244,10 @@ trait :box, ->(expanded) {
   }
 }
 ```
+
+Dynamic functions run for explicit `nil` and `false` arguments, so defaults and conditional expressions still work. A `nil` or `false` result for a property removes that property from earlier styles. Calling a function with required arguments and no arguments returns an empty style.
+
+Dynamic values must be single CSS values. Nested condition hashes are not supported in dynamic traits; put conditions in a static trait referencing a CSS variable. Arrays are rejected: CSS custom properties cannot select browser-supported fallback values the way repeated static declarations do. Declare fallback arrays in a static trait instead.
 
 Dynamic values become CSS custom-property values. Do not pass untrusted user input directly; validate it against the values or formats your property accepts first.
 
@@ -443,7 +447,7 @@ Declare variables in a component with `style_vars`. They are read back through `
 class PanelComponent < ViewComponent::Base
   include ViewComponent::Styles
 
-  style_vars gap: 12, accent: "#ff6600"
+  style_vars gap: "12px", accent: "#ff6600"
 
   styles do
     trait :root, display: "grid", gap: styles.gap, border_color: styles.accent
@@ -458,7 +462,7 @@ This emits `:root{--vcnbqr2vub:12px}` and `:root{--vclpsr1n9z:#ff6600}` in the s
 
 Rules for values:
 
-- Values follow the same rules as style values. Numbers become `px`, so use a string for unitless numbers such as font weights.
+- Values follow the same rules as style values. Numeric variables stay unitless, matching StyleX. Use explicit units for lengths (`"12px"`) and times (`"200ms"`).
 - A hash value declares conditions the same way a property does inside a trait: `default` plus any pseudo-class symbol, breakpoint, or raw `@media` string. Only at-rules make sense on `:root`.
 - Variable names are hashed from the declaring class or file and the key. Pass `name:` to hash from a stable string instead.
 

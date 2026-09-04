@@ -27,12 +27,12 @@ RSpec.describe ViewComponent::Styles::Compiler do
     expect(sheet.base.classes["color"].length).to eq(3)
     css = registry.rules.map(&:to_css)
     expect(css).to include(a_string_matching(/:hover\{color:blue\}/))
-    expect(css).to include(a_string_matching(/\A@media \(max-width: 768px\)\{\.vc\w+\{color:green\}\}\z/))
+    expect(css).to include(a_string_matching(/\A@media \(max-width: 768px\)\{(\.vc\w+)\1\{color:green\}\}\z/))
   end
 
   it "supports nested conditions" do
     compile(base: { color: { md: { hover: "blue" } } })
-    expect(registry.rules.first.to_css).to match(/\A@media \(max-width: 768px\)\{\.vc\w+:hover\{color:blue\}\}\z/)
+    expect(registry.rules.first.to_css).to match(/\A@media \(max-width: 768px\)\{(\.vc\w+)\1:hover\{color:blue\}\}\z/)
     expect(registry.rules.first.priority).to eq(4000 + 200 + 130)
   end
 

@@ -4,20 +4,35 @@ module ViewComponent
   module Styles
     module Property
       SHORTHANDS_OF_SHORTHANDS = %w[
-        all animation background border border-block border-inline font grid grid-area
-        grid-template inset margin padding scroll-margin scroll-padding
+        animation background border font grid grid-area
+        inset margin mask padding scroll-margin scroll-padding
       ].to_set.freeze
 
+      TIME_PROPERTIES = %w[
+        animation-delay animation-duration transition-delay transition-duration voice-duration
+      ].to_set.freeze
+
+      ADDITIONAL_UNITLESS = %w[
+        -webkit-line-clamp counter-set counter-reset hyphenate-limit-chars
+        mask-border-outset mask-border-slice mask-border-width rotate
+        shape-image-threshold math-depth
+      ].to_set.freeze
+
+      # These shorthands sit between their parent shorthand and other shorthands.
+      INTERMEDIATE_SHORTHANDS = %w[border-block border-inline grid-template].to_set.freeze
+
       SHORTHANDS_OF_LONGHANDS = %w[
-        animation-range background-position border-block-end border-block-start border-color
+        animation-range background-position border-block-color border-block-end border-block-start
+        border-block-style border-block-width border-bottom border-color
         border-image border-inline-color border-inline-end border-inline-start border-inline-style
-        border-inline-width border-radius border-style border-width caret column-rule columns
-        contain-intrinsic-size container corner-shape flex flex-flow font-variant gap grid-column
-        grid-gap grid-row grid-template-areas inset-block inset-inline list-style margin-block
-        margin-inline mask mask-border offset outline overflow overscroll-behavior padding-block
-        padding-inline place-content place-items place-self scroll-margin-block scroll-margin-inline
-        scroll-padding-block scroll-padding-inline scroll-snap-type scroll-timeline text-decoration
-        text-emphasis transition view-timeline
+        border-inline-width border-left border-radius border-right border-style border-top border-width
+        caret column-rule columns
+        contain-intrinsic-size container corner-shape flex flex-flow font-synthesis font-variant gap grid-column
+        grid-gap grid-row inset-block inset-inline list-style margin-block
+        margin-inline mask-border offset outline overflow overscroll-behavior padding-block
+        padding-inline place-content place-items place-self position-try scroll-margin-block scroll-margin-inline
+        scroll-padding-block scroll-padding-inline scroll-timeline text-box text-decoration
+        text-emphasis text-wrap transition view-timeline white-space
       ].to_set.freeze
 
       UNITLESS = %w[
@@ -69,6 +84,8 @@ module ViewComponent
         case value
         when Array then value.map { |v| normalize_value(property, v) }
         when Integer, Float
+          return value.to_s if property.start_with?("--") || ADDITIONAL_UNITLESS.include?(property)
+          return "#{value}ms" if TIME_PROPERTIES.include?(property)
           return "0" if value.zero?
           UNITLESS.include?(property) ? value.to_s : "#{value}px"
         when Symbol then value.to_s.tr("_", "-")
@@ -77,7 +94,9 @@ module ViewComponent
       end
 
       def base_priority(property)
+        return 500 if property == "all"
         return 1000 if SHORTHANDS_OF_SHORTHANDS.include?(property)
+        return 1500 if INTERMEDIATE_SHORTHANDS.include?(property)
         return 2000 if SHORTHANDS_OF_LONGHANDS.include?(property)
         return 3000 if property.match?(LOGICAL_PATTERN)
 

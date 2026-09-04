@@ -20,7 +20,14 @@ module ViewComponent
         at_rules = conditions.select { |c| c.start_with?("@") }
                              .sort_by { |c| Property.condition_priority(c) }
 
-        css = "#{selector}#{pseudos.join}{#{declarations}}"
+        # StyleX adds one class per at-rule so a matching media query can
+        # override a pseudo-class even when cascade layers are disabled.
+        repetitions = 0
+        if selector.start_with?(".")
+          repetitions = at_rules.length
+          repetitions += 1 if pseudos.any? { |pseudo| pseudo.include?(":where(") }
+        end
+        css = "#{selector * (1 + repetitions)}#{pseudos.join}{#{declarations}}"
         at_rules.reverse_each { |at| css = "#{at}{#{css}}" }
         css
       end

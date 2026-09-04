@@ -18,8 +18,8 @@ RSpec.describe ViewComponent::Styles::DynamicStyle do
       dynamic: [:width], using: ->(width: 10) { { width: width } }
     })
     expect(sheet.box.inline.values).to eq(["10px"])
-    expect(sheet.box(width: nil)).to be_empty
-    expect(sheet.box(width: false)).to be_empty
+    expect(sheet.box(width: nil).classes).to eq("width" => nil)
+    expect(sheet.box(width: false).classes).to eq("width" => nil)
   end
 
   it "registers var-backed rules at definition time" do
@@ -38,9 +38,9 @@ RSpec.describe ViewComponent::Styles::DynamicStyle do
     expect(registry.size).to eq(1)
   end
 
-  it "returns an empty style for nil or missing args" do
+  it "unsets nil results and returns an empty style for missing args" do
     dynamic = described_class.new(name: "spec", set: :size, fn: ->(w) { { width: w } })
-    expect(dynamic.call(nil)).to be_empty
+    expect(dynamic.call(nil).classes).to eq("width" => nil)
     expect(dynamic.call).to be_empty
   end
 
@@ -70,7 +70,7 @@ RSpec.describe ViewComponent::Styles::DynamicStyle do
 
     expect(registry.size).to eq(2)
     expect(dynamic.call(3).classes.keys).to eq(["width"])
-    expect(dynamic.call(false)).to be_empty
+    expect(dynamic.call(false).inline.values).to eq(["0"])
   end
 
   it "rejects properties that were not compiled" do
@@ -84,5 +84,19 @@ RSpec.describe ViewComponent::Styles::DynamicStyle do
     b = described_class.new(name: "spec", set: :size, fn: ->(w) { { width: w } }).call(1)
     expect(a.class_names).to eq(b.class_names)
     expect(a.inline).to eq(b.inline)
+  end
+end
+
+RSpec.describe "dynamic fallback arrays" do
+  [true, false].each do |inline|
+    it "rejects fallback arrays with inline=#{inline} and remains callable after failure" do
+      registry = with_fresh_registry
+      allow(ViewComponent::Styles.config).to receive(:inline?).and_return(inline)
+      sheet = ViewComponent::Styles.create(box: ->(value) { { position: value } })
+      baseline = registry.to_css
+      expect { sheet.box(%w[sticky fixed]) }.to raise_error(ArgumentError, /Array.*position.*static trait/)
+      expect(registry.to_css).to eq(baseline)
+      expect(sheet.box("sticky").inline.values).to eq(["sticky"])
+    end
   end
 end

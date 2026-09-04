@@ -28,9 +28,6 @@ module ViewComponent
 
       def call(*args, **kwargs)
         return Style::EMPTY if args.empty? && kwargs.empty? && required_arguments?
-        values = args + kwargs.values
-        return Style::EMPTY if !values.empty? && values.all? { |arg| arg.nil? || arg == false }
-
         result = @fn.call(*args, **kwargs)
         unless result.is_a?(Hash)
           raise ArgumentError, "Dynamic style #{set.inspect} must return a Hash, got #{result.class}"
@@ -45,9 +42,21 @@ module ViewComponent
                   "Dynamic style #{name}.#{set} returned undeclared property #{property.inspect}. " \
                   "Compiled properties: #{@compiled_properties.inspect}"
           end
-          if value.nil?
+          if value.nil? || value == false
             classes[property] = nil
             next
+          end
+
+          if value.is_a?(Hash)
+            raise ArgumentError,
+                  "Dynamic style #{name}.#{set} cannot use conditions for #{property.inspect}. " \
+                  "Declare conditions in a static trait referencing a CSS variable instead."
+          end
+
+          if value.is_a?(Array)
+            raise ArgumentError,
+                  "Dynamic style #{name}.#{set} cannot use an Array for #{property.inspect}. " \
+                  "Declare fallback arrays in a static trait; dynamic values must be single CSS values."
           end
 
           var, class_name = identifiers(property)

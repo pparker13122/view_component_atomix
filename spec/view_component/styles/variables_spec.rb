@@ -42,7 +42,7 @@ RSpec.describe ViewComponent::Styles::Variables, type: :component do
     expect(klass.styles[:accent]).to eq(klass.styles.accent)
     expect(klass.styles.var_names).to eq(%i[gap accent])
     expect(klass.new.styles.accent).to eq(klass.styles.accent)
-    expect(registry.to_css).to include(":root{#{klass.styles.vars_for(:gap).var_name(:gap)}:12px}")
+    expect(registry.to_css).to include(":root{#{klass.styles.vars_for(:gap).var_name(:gap)}:12}")
     expect(registry.to_css).to include("{gap:#{klass.styles.gap}}")
   end
 

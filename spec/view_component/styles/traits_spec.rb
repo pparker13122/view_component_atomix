@@ -158,7 +158,7 @@ RSpec.describe "traits" do
 
       expect(klass.styles.root.classes["color"].length).to eq(3)
       expect(sub.styles.extra.classes["padding"].length).to eq(2)
-      expect(registry.rules.map(&:to_css)).to include(a_string_matching(/\A@media \(max-width: 900px\)\{\.vc\w+\{color:blue\}\}\z/))
+      expect(registry.rules.map(&:to_css)).to include(a_string_matching(/\A@media \(max-width: 900px\)\{(\.vc\w+)\1\{color:blue\}\}\z/))
       expect { other.styles }.to raise_error(ArgumentError, /Unknown style condition :tablet/)
     end
 
@@ -242,7 +242,7 @@ RSpec.describe "traits" do
     it "treats false like nil for enumerated and dynamic traits" do
       sheet = create(size: { default: :sm, sm: { font_size: 14 } }, sized: ->(w) { { width: w } })
       expect(sheet.size(false)).to equal(sheet.size(:sm))
-      expect(sheet.sized(false)).to be_empty
+      expect(sheet.sized(false).classes).to eq("width" => nil)
     end
 
     it "compiles the hash form in declaration order with blocks" do
