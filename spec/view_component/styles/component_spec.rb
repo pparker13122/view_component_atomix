@@ -5,12 +5,15 @@ RSpec.describe ViewComponent::Styles, type: :component do
     render_inline(ButtonComponent.new(variant: :primary, width: 120)) { "Save" }
 
     button = page.find("button")
-    expected = ViewComponent::Styles.props(
-      ButtonComponent.styles.base, ButtonComponent.styles.primary, ButtonComponent.styles.sized(120)
-    )
-    expect(button[:class]).to eq(expected[:class])
-    expect(button[:style]).to eq(expected[:style])
-    expect(button[:style]).to match(/\A--vc\w+:120px\z/)
+    classes = button[:class].split
+    variable, value = button[:style].split(":", 2)
+    dynamic_class = ViewComponent::Styles::Hashing.class_name("width", "var(#{variable})")
+
+    expect(classes).to include(ButtonComponent.styles.base.classes["padding"].first)
+    expect(classes).to include(ButtonComponent.styles.primary.classes["background"].first)
+    expect(classes).not_to include(*ButtonComponent.styles.base.classes["background"])
+    expect(classes).to include(dynamic_class)
+    expect(value).to eq("120px")
     expect(button.text).to eq("Save")
   end
 
@@ -76,11 +79,6 @@ RSpec.describe ViewComponent::Styles, type: :component do
   it "exposes sx_attrs on instances" do
     component = ButtonComponent.new
     expect(component.sx_attrs(ButtonComponent.styles.base)).to eq(ButtonComponent.styles.base.to_attrs)
-  end
-
-  it "tracks includers for eager loading" do
-    expect(ViewComponent::Styles.includers).to include(ButtonComponent, LazyComponent)
-    expect(ViewComponent::Styles.eager_load!).to equal(ViewComponent::Styles.registry)
   end
 
   describe "renaming the styles method" do

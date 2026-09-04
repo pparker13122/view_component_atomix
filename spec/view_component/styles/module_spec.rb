@@ -14,6 +14,14 @@ RSpec.describe ViewComponent::Styles do
     it "requires definitions" do
       expect { described_class.create }.to raise_error(ArgumentError)
     end
+
+    it "accepts an explicit dynamic property list as an escape hatch" do
+      sheet = described_class.create(
+        box: { dynamic: %i[width height], using: ->(x) { x ? { width: x } : { height: 0 } } }
+      )
+
+      expect(sheet.box(2).classes.keys).to eq(["width"])
+    end
   end
 
   describe ".props and .sx" do

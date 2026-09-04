@@ -15,6 +15,17 @@ module ViewComponent
         ActiveSupport.on_load(:action_view) { include ViewComponent::Styles::Helper }
       end
 
+      initializer "view_component.styles.reloader" do
+        ActiveSupport::Reloader.before_class_unload do
+          # Style declarations under the main autoloader will be evaluated
+          # again. Discard their old rules and class references first so
+          # removed declarations cannot survive a reload.
+          ViewComponent::Styles.registry.clear
+          ViewComponent::Styles.includers.clear
+          ViewComponent::Styles.dynamic_styles.clear
+        end
+      end
+
       config.to_prepare do
         app = Rails.application
         reloading = app.config.respond_to?(:reloading_enabled?) ? app.config.reloading_enabled? : !app.config.cache_classes

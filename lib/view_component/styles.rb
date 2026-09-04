@@ -20,6 +20,7 @@ require_relative "styles/rule"
 require_relative "styles/registry"
 require_relative "styles/attrs"
 require_relative "styles/style"
+require_relative "styles/dynamic_properties"
 require_relative "styles/dynamic_style"
 require_relative "styles/enumerated_style"
 require_relative "styles/builder"
@@ -50,6 +51,14 @@ module ViewComponent
 
       def includers
         @includers ||= []
+      end
+
+      def dynamic_styles
+        @dynamic_styles ||= []
+      end
+
+      def compile_dynamic_styles!
+        dynamic_styles.each(&:compile!)
       end
 
       def create(definitions = nil, name: nil, **inline_definitions, &block)
@@ -143,6 +152,7 @@ module ViewComponent
 
       def reset!
         registry.clear
+        dynamic_styles.clear
         @vars = nil
         @config = nil
         @written_digest = nil

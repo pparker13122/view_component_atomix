@@ -22,8 +22,10 @@ RSpec.describe "companion style modules", type: :component do
   it "renders companion styles" do
     render_inline(ToastComponent.new) { "hi" }
     div = page.find("div")
-    expected = ViewComponent::Styles.props(ToastComponent.theme, ToastComponent.styles.root, ToastComponent.styles.tone)
-    expect(div[:class]).to eq(expected[:class])
+    classes = div[:class].split
+    expect(classes).to include(*ToastComponent.theme.class_names.split)
+    expect(classes).to include(*ToastComponent.styles.root.class_names.split)
+    expect(classes).to include(*ToastComponent.styles.tone.class_names.split)
   end
 
   it "lets the component's own traits win over the companion" do

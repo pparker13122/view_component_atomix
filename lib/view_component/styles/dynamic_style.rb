@@ -3,28 +3,18 @@
 module ViewComponent
   module Styles
     class DynamicStyle
-      class Placeholder < BasicObject
-        def to_s = "0"
-        def to_str = "0"
-        def to_i = 0
-        def to_f = 0.0
-        def coerce(other) = [self, other]
-        def respond_to?(*) = true
-        def nil? = false
-        def method_missing(*) = self
-        def respond_to_missing?(*) = true
-      end
-
       attr_reader :name, :set
 
-      def initialize(name:, set:, fn:)
+      def initialize(name:, set:, fn:, properties: nil)
         @name = name
         @set = set
         @fn = fn
         @vars = {}
         @mutex = Mutex.new
-        probe
-        freeze
+        @declared_properties = normalize_properties(properties)
+        @compiled_properties = @declared_properties
+        compile! if Styles.config.inline?
+        Styles.dynamic_styles << self
       end
 
       def arity
@@ -44,39 +34,54 @@ module ViewComponent
         inline = {}
         result.each do |key, value|
           property = Property.normalize_key(key)
+          if @compiled_properties && !@compiled_properties.include?(property)
+            raise ArgumentError,
+                  "Dynamic style #{name}.#{set} returned undeclared property #{property.inspect}. " \
+                  "Compiled properties: #{@compiled_properties.inspect}"
+          end
           if value.nil?
             classes[property] = nil
             next
           end
 
-          var, class_name = ensure_registered(property)
+          var, class_name = identifiers(property)
           classes[property] = [class_name]
           inline[var] = Property.normalize_value(property, value)
         end
         Style.new(classes, inline)
       end
 
+      def compile!
+        @mutex.synchronize do
+          @compiled_properties ||= DynamicProperties.extract(@fn, name: name, set: set)
+        end
+        @compiled_properties.each { |property| ensure_registered(property) }
+        self
+      end
+
       private
 
-      def probe
-        placeholders = Array.new(arity.negative? ? arity.abs - 1 : arity) { Placeholder.new }
-        result = @fn.call(*placeholders)
-        result.each_key { |key| ensure_registered(Property.normalize_key(key)) } if result.is_a?(Hash)
-      rescue StandardError, NoMethodError => e
-        warn "[ViewComponent::Styles] Could not probe dynamic style #{name}.#{set}: #{e.message}. " \
-             "Its CSS will only be registered when first called."
+      def normalize_properties(properties)
+        return unless properties
+
+        properties.map { |property| Property.normalize_key(property) }.uniq.freeze
+      end
+
+      def identifiers(property)
+        @mutex.synchronize { @vars[property] ||= build_identifiers(property) }
       end
 
       def ensure_registered(property)
-        @mutex.synchronize do
-          @vars[property] ||= begin
-            var = Hashing.var_name(name, set, property)
-            value = "var(#{var})"
-            class_name = Hashing.class_name(property, value)
-            Styles.registry.add(Rule.new(selector: ".#{class_name}", property: property, value: value))
-            [var, class_name].freeze
-          end
-        end
+        var, class_name = identifiers(property)
+        Styles.registry.add(
+          Rule.new(selector: ".#{class_name}", property: property, value: "var(#{var})")
+        )
+      end
+
+      def build_identifiers(property)
+        var = Hashing.var_name(name, set, property)
+        value = "var(#{var})"
+        [var, Hashing.class_name(property, value)].freeze
       end
     end
   end

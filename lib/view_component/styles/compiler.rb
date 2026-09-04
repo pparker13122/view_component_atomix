@@ -40,10 +40,32 @@ module ViewComponent
         when Proc
           DynamicStyle.new(name: @name, set: set_name, fn: definition)
         when Hash
-          classify(set_name, definition)
+          if dynamic_definition?(definition)
+            compile_dynamic(set_name, definition)
+          else
+            classify(set_name, definition)
+          end
         else
           raise ArgumentError, "Style set #{set_name.inspect} must be a Hash or a lambda, got #{definition.class}"
         end
+      end
+
+      def dynamic_definition?(definition)
+        definition.key?(:dynamic) || definition.key?(:using)
+      end
+
+      def compile_dynamic(set_name, definition)
+        unknown = definition.keys - %i[dynamic using]
+        raise ArgumentError, "Dynamic style #{set_name.inspect} has unknown options #{unknown.inspect}" if unknown.any?
+
+        properties = definition[:dynamic]
+        fn = definition[:using]
+        unless properties.is_a?(Array) && properties.all? { |property| property.is_a?(Symbol) || property.is_a?(String) }
+          raise ArgumentError, "Dynamic style #{set_name.inspect} requires dynamic: with an Array of property names"
+        end
+        raise ArgumentError, "Dynamic style #{set_name.inspect} requires using: with a lambda" unless fn.is_a?(Proc)
+
+        DynamicStyle.new(name: @name, set: set_name, fn: fn, properties: properties)
       end
 
       def classify(set_name, definition)
@@ -182,8 +204,7 @@ module ViewComponent
           end
         else
           normalized = Property.normalize_value(property, value)
-          hash_value = normalized.is_a?(Array) ? normalized.join(",") : normalized
-          class_name = Hashing.class_name(property, hash_value, conditions)
+          class_name = Hashing.class_name(property, normalized, conditions)
           Styles.registry.add(
             Rule.new(selector: ".#{class_name}", property: property, value: normalized, conditions: conditions)
           )

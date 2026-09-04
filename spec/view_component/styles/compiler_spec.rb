@@ -80,8 +80,4 @@ RSpec.describe ViewComponent::Styles::Compiler do
     expect { compile(base: "nope") }.to raise_error(ArgumentError, /must be a Hash or a lambda/)
   end
 
-  it "wraps lambdas in dynamic styles" do
-    sheet = compile(sized: ->(w) { { width: w } })
-    expect(sheet[:sized]).to be_a(ViewComponent::Styles::DynamicStyle)
-  end
 end

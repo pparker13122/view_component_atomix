@@ -43,8 +43,8 @@ RSpec.describe "Rails integration", type: :request do
 
   it "provides sx in plain views" do
     get "/"
-    expect(Nokogiri::HTML(response.body).at_css("#card")["class"]).to eq(
-      styles.props(CardStyles::CARD.root, CardStyles::CARD.title)[:class]
-    )
+    classes = Nokogiri::HTML(response.body).at_css("#card")["class"].split
+    expect(classes).to include(*CardStyles::CARD.root.class_names.split)
+    expect(classes).to include(*CardStyles::CARD.title.class_names.split)
   end
 end

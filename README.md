@@ -234,7 +234,26 @@ styles.box(120, 40)   # class="vc…" style="--vc…:120px;--vc…:40px"
 styles.box(nil)       # empty style
 ```
 
-The lambda is probed once at definition time to learn which properties it produces, so the keys it returns must not depend on the argument values.
+The lambda's source is parsed without executing it. Its body must be one literal Hash with static property keys; values can contain arbitrary runtime expressions. This lets asset precompilation discover every variable-backed rule while requests supply only the values. Keep optional keys in the hash and return `nil` when they do not apply:
+
+```ruby
+trait :box, ->(expanded) {
+  {
+    height: expanded ? "auto" : 0,
+    overflow: expanded ? "visible" : nil
+  }
+}
+```
+
+Helper-built hashes and conditional hash shapes hide their keys from source compilation. For those cases, declare the complete property set explicitly:
+
+```ruby
+trait :box,
+      dynamic: %i[height overflow],
+      using: ->(expanded) { build_box_styles(expanded) }
+```
+
+Runtime results may omit declared properties, but returning a property that was not compiled raises an error.
 
 ### Naming traits
 
@@ -562,10 +581,10 @@ Only enable `use_layers` if your other CSS is layered too, since unlayered rules
 
 ## Differences from StyleX
 
-- Class names are `vc` + 8 base36 characters of a SHA1, not StyleX's murmurhash, so output is not byte-compatible with a JavaScript StyleX build.
+- Class names are `vc` + 12 base36 characters of a SHA1, not StyleX's murmurhash, so output is not byte-compatible with a JavaScript StyleX build.
 - Top-level pseudo-class and media keys are rejected. Nest conditions under the property.
 - A trait cannot be named after a CSS property, and one whose name collides with a method on `Object` or the sheet must be read with `styles[:name]`.
-- There is no static analysis. Any `create` call reachable by loading `app/` is included in the build, and calls inside ERB templates are not.
+- Static analysis is limited to dynamic-trait property discovery. Other styles are included when their `create` calls are reached while loading `app/`; calls inside ERB templates are not.
 
 ## Development
 

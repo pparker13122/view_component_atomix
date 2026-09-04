@@ -31,13 +31,27 @@ RSpec.describe ViewComponent::Styles::DynamicStyle do
     expect(dynamic.call(5).inline_style).to include(":10px").and include(":0.5")
   end
 
-  it "falls back to lazy registration when probing fails" do
+  it "rejects a lambda whose body is not one literal hash" do
     expect do
-      dynamic = described_class.new(name: "spec", set: :size, fn: ->(n) { raise "boom" unless Integer === n; { width: n } })
-      expect(registry.size).to eq(0)
-      dynamic.call(3)
-      expect(registry.size).to eq(1)
-    end.to output(/Could not probe dynamic style/).to_stderr
+      described_class.new(name: "spec", set: :size, fn: ->(n) { raise "boom" unless n; { width: n } })
+    end.to raise_error(ViewComponent::Styles::DynamicProperties::Unsupported, /must return one literal Hash/)
+  end
+
+  it "accepts explicitly declared properties for arbitrary lambdas" do
+    dynamic = described_class.new(
+      name: "spec", set: :size, properties: %i[width height],
+      fn: ->(value) { value ? { width: value } : { height: 0 } }
+    )
+
+    expect(registry.size).to eq(2)
+    expect(dynamic.call(3).classes.keys).to eq(["width"])
+    expect(dynamic.call(false)).to be_empty
+  end
+
+  it "rejects properties that were not compiled" do
+    dynamic = described_class.new(name: "spec", set: :size, properties: [:width], fn: ->(_) { { height: 2 } })
+
+    expect { dynamic.call(true) }.to raise_error(ArgumentError, /undeclared property "height"/)
   end
 
   it "is deterministic across instances with the same identity" do

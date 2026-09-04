@@ -237,7 +237,7 @@ RSpec.describe "traits" do
     end
   end
 
-  describe "review fixes" do
+  describe "edge cases" do
     it "treats false like nil for enumerated and dynamic traits" do
       sheet = create(size: { default: :sm, sm: { font_size: 14 } }, sized: ->(w) { { width: w } })
       expect(sheet.size(false)).to equal(sheet.size(:sm))
