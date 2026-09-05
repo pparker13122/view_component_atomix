@@ -412,6 +412,14 @@ Set `config.view_component.styles.styles_method = :css` in an initializer to cha
 
 A shared module that declares `styles_method :css` is exposed as `css` rather than under a derived accessor. If the component declares the same name, the two sheets merge into one and the component's traits win on conflicts. Only an explicit `styles_method` call inside the module counts, not the configured default.
 
+A subclass can also adopt an inherited module accessor with `styles_method`.
+Its sheet retains the traits and variables exposed by that reader, alongside
+the parent's primary sheet. If several modules share a separate accessor, the
+last included module supplies that reader. The subclass's companion, directly
+included matching modules, and own declarations take precedence, in that order.
+Modules already merged into a parent's primary sheet are inherited with the
+parent's overrides intact.
+
 ```ruby
 # app/styles/tag_styles.rb
 module TagStyles

@@ -125,7 +125,9 @@ module ViewComponent
 
         def styles_context
           merged = styles_mixins.select { |mod| mod < Variables && styles_accessor_for(mod) == current_styles_method }
-          layers = [inherited_styles, companion_styles, *merged.map { |mod| mod.send(:resolved_styles) },
+          inherited_mixin = inherited_styles_mixin_accessors[current_styles_method]
+          layers = [inherited_styles, inherited_mixin ? inherited_mixin.send(:resolved_styles) : Sheet::EMPTY,
+                    companion_styles, *merged.map { |mod| mod.send(:resolved_styles) },
                     styles_state.styles_own || Sheet::EMPTY]
           layers.reduce(&:merge)
         end

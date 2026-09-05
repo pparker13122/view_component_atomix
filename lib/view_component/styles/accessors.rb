@@ -44,6 +44,24 @@ module ViewComponent
         @_styles_mixins ||= []
       end
 
+      def inherited_styles_mixin_accessors
+        return {} unless is_a?(Class) && superclass.respond_to?(:styles_mixin_accessors, true)
+
+        superclass.send(:styles_mixin_accessors)
+      end
+
+      # Separate readers select the last included module. Once a reader is
+      # the primary accessor, its modules are represented by inherited_styles
+      # instead, including any declarations which override them on that owner.
+      def styles_mixin_accessors
+        accessors = inherited_styles_mixin_accessors
+        styles_mixins.each do |mod|
+          accessors[styles_accessor_for(mod)] = mod if mod < Variables
+        end
+        accessors.delete(current_styles_method)
+        accessors
+      end
+
       def accessor_base(mod)
         mod.name.underscore.tr("/", "_").sub(ACCESSOR_SUFFIX, "")
       end
