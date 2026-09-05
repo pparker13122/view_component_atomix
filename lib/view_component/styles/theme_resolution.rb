@@ -32,7 +32,11 @@ module ViewComponent
 
       def build_theme(vars, overrides, block)
         overrides = block.call if block
-        return ViewComponent::Styles.create_theme(vars, **overrides) if vars
+        if vars
+          return ViewComponent::Styles.registry.transaction(independent: true) do
+            ViewComponent::Styles.create_theme(vars, **overrides)
+          end
+        end
 
         sheet = resolved_styles
         grouped = overrides.group_by do |key, _|

@@ -92,9 +92,7 @@ module ViewComponent
           styles_state.variables.drain do |declaration|
             ViewComponent::Styles.registry.with_source(declaration.source) do
               definitions = declaration.block.call
-              ViewComponent::Styles.registry.transaction(independent: true) do
-                add_vars(declaration.label, definitions)
-              end
+              add_vars(declaration.label, definitions)
             end
           end
         rescue StandardError
@@ -133,7 +131,9 @@ module ViewComponent
         end
 
         def add_vars(label, definitions)
-          vars = Vars.new(label, definitions)
+          # Both immediate and deferred declarations publish owner state that
+          # survives a consuming transaction's failure. Commit their CSS first.
+          vars = ViewComponent::Styles.registry.transaction(independent: true) { Vars.new(label, definitions) }
           sheet = Sheet.new({}, vars.names.keys.to_h { |key| [key, vars] })
           styles_state.styles_own = styles_state.styles_own ? styles_state.styles_own.merge(sheet) : sheet
         end

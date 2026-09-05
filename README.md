@@ -623,6 +623,14 @@ The dummy app in `spec/dummy` exercises the railtie, the inline and file modes, 
 
 A failed compilation does not publish partial CSS. Corrected declarations can be retried; separately resolved dependencies that succeeded remain registered. Declaration blocks are Ruby code: their own side effects and successful explicit calls to `create` or `define_vars` are not rolled back. Style and variable declarations retain successful earlier declarations when a later one fails.
 
+Successful owner variable and theme declarations commit their CSS independently
+of a consuming registry transaction, because their owner sheets and cached
+themes survive its failure. This applies to immediate and deferred variables
+and to themes with explicit or inferred variable groups. A failed owner
+declaration still publishes no partial CSS. Standalone `define_vars` and
+`create_theme` calls inside an explicit registry transaction retain that
+transaction's rollback behavior.
+
 Value objects own copies of their containers and strings. `Style`, `Rule`, and `Vars` expose frozen data; `Sheet` and `EnumeratedStyle` copy their maps while retaining the style objects they reference. Build a new value or merge styles instead of mutating exposed data. `Sheet#fetch` accepts the same arguments as the corresponding trait method, including rejecting arguments for static traits.
 
 For contributors, declaration handling is organized by responsibility:
