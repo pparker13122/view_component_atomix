@@ -17,6 +17,9 @@ module ViewComponent
         if Property.known?(Property.normalize_key(set_name))
           raise ArgumentError, "Trait #{set_name.inspect} is named after a CSS property. Pick another name."
         end
+        if Sheet.method_defined?(set_name)
+          raise ArgumentError, "Trait #{set_name.inspect} collides with a method on the styles sheet. Pick another name."
+        end
 
         case definition
         when Proc
