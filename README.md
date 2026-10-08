@@ -60,6 +60,8 @@ Requires Ruby 3.1+, Rails 7.0+, and ViewComponent 3 or 4.
 gem "view_component_atomix"
 ```
 
+The API is pre-1.0 and may change between minor versions. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
 Add the stylesheet tag to your layout:
 
 ```erb
@@ -75,6 +77,18 @@ Outside production the tag inlines a `<style>` block, so there is nothing to bui
 In production the tag links `view_component_atomix.css`, which `rake view_component:atomix:build` writes to `app/assets/builds/`. The build task is inserted as the first prerequisite of `assets:precompile`, so it runs before any `css:build` or `javascript:build` step. Add the output file to `.gitignore`.
 
 Sprockets users need `//= link_tree ../builds` in `app/assets/config/manifest.js`. Propshaft picks the file up automatically.
+
+Styles must be declared while the app loads: in `styles`, `style_vars` and `theme` declarations, or in constants under `app/`. A `create`, `define_vars` or `create_theme` call that first runs during a request adds a rule the built production file does not contain, and one more rule to the registry for every distinct value. For values only known at request time, use a [dynamic trait](#dynamic-traits).
+
+### Content Security Policy
+
+Pass `nonce: true` to add the request's CSP nonce to the inline `<style>` tag or the stylesheet link:
+
+```erb
+<%= view_component_atomix_tag nonce: true %>
+```
+
+Static traits, variables and themes only add classes. Dynamic traits set CSS variables through a `style` attribute, which a policy has to allow with `style-src-attr 'unsafe-inline'`.
 
 Like tailwindcss-rails, this gem targets the Rails asset pipeline and does not integrate with esbuild, Vite, or other JavaScript bundlers. Apps using jsbundling-rails or cssbundling-rails still have the pipeline serving `app/assets/builds`, so they work unchanged.
 
@@ -253,7 +267,15 @@ Dynamic functions run for explicit `nil` and `false` arguments, so defaults and 
 
 Dynamic values must be single CSS values. Nested condition hashes are not supported in dynamic traits; put conditions in a static trait referencing a CSS variable. Arrays are rejected: CSS custom properties cannot select browser-supported fallback values the way repeated static declarations do. Declare fallback arrays in a static trait instead.
 
-Dynamic values become CSS custom-property values. Do not pass untrusted user input directly; validate it against the values or formats your property accepts first.
+Dynamic values become CSS custom-property values in the element's `style` attribute. A value that could end its declaration or swallow the ones after it raises `ArgumentError`: a `;` outside a string or function, or unbalanced quotes, brackets or comments. Static, variable and theme values are checked the same way. This stops a value from adding declarations of its own, but it does not make an arbitrary value safe for the property it lands in, so still validate untrusted input against the values or formats your property accepts.
+
+A dynamic trait can also set a variable for a subtree at request time, which is how to apply a value such as a per-tenant colour that no theme could declare in advance:
+
+```ruby
+trait :branded,
+      dynamic: [Brand::VARS.var_name(:primary)],
+      using: ->(color) { { Brand::VARS.var_name(:primary) => color } }
+```
 
 Helper-built hashes and conditional hash shapes hide their keys from source compilation. For those cases, declare the complete property set explicitly:
 
@@ -269,7 +291,7 @@ Runtime results may omit declared properties, but returning a property that was 
 
 Because reference keys in a combination are told apart from property keys by name, a trait cannot be named after a CSS property. That rules out some tempting names: `width`, `container`, `content`, `overlay`, `marker`, `fill`, `page`, `top`. Use `sized`, `wrapper`, `body`, `backdrop`, or similar.
 
-A trait whose name collides with a method on `Object` or the sheet (`p`, `select`, `hash`, `props`, `names`) is still declared, but must be read with `styles[:p]` instead of `styles.p`.
+A trait also cannot share its name with a public method of the sheet, since `styles.names` would call the method instead of returning the trait. That rules out `names`, `vars`, `props`, `merge`, `fetch`, and `Object` methods such as `hash`, `class`, `method` and `then`. Declaring one raises `ArgumentError`.
 
 ## Sharing styles
 
@@ -315,6 +337,8 @@ PillComponent.pill_styles.names  # => [:pill]
 Use a plain module. One that extends `ActiveSupport::Concern` defers the include, so `styles` is not available inside the module body. An anonymous module has no name to derive an accessor from, so its traits merge into the component's `styles` instead.
 
 Style files live in either `app/styles` or `app/components/styles`. Both are autoload roots, so `app/components/styles/pill_styles.rb` defines `PillStyles`, not `Styles::PillStyles`.
+
+The gem registers `app/components/styles` as a root itself. If your app already has that directory and expects `Styles::` constants in it, set `config.view_component.atomix.autoload_roots = []` in `config/application.rb`.
 
 ### Companion modules
 
@@ -495,6 +519,7 @@ Rules for values:
 - Values follow the same rules as style values. Numeric variables stay unitless, matching StyleX. Use explicit units for lengths (`"12px"`) and times (`"200ms"`).
 - A hash value declares conditions the same way a property does inside a trait: `default` plus any pseudo-class symbol, breakpoint, or raw `@media` string. Only at-rules make sense on `:root`.
 - Variable names are hashed from the declaring class or file and the key. Pass `name:` to hash from a stable string instead.
+- A key cannot share its name with a public method of `Vars` or the sheet, such as `id`, `names`, `theme` or `hash`. Declaring one raises `ArgumentError`.
 
 ### App-wide variables
 
@@ -607,9 +632,10 @@ All options live under `config.view_component.atomix`.
 | `output_path` | `app/assets/builds/view_component_atomix.css` | Where the build task writes |
 | `breakpoints` | `{}` | Symbol keys usable as conditions app-wide; `breakpoints` inside a `styles` block adds or overrides per component |
 | `pseudo_map` | see `Configuration::DEFAULT_PSEUDO_MAP` | Symbol to pseudo-class/at-rule mapping |
-| `class_prefix` | `"vc"` | Prefix for generated class and variable names |
+| `class_prefix` | `"vc"` | Prefix for generated class and variable names. Must start with a letter or underscore |
 | `styles_method` | `:styles` | Name of the class macro and instance reader added by `include ViewComponent::Atomix` |
 | `eager_load_paths` | `["app/components", "app/components/styles", "app/styles"]` | Directories loaded before the first request in development |
+| `autoload_roots` | `["app/components/styles"]` | Directories registered with Rails as autoload roots. Set in `config/application.rb` |
 | `use_layers` | `false` | Wrap output in `@layer` blocks ordered by priority |
 | `vars` | `nil` | App-wide variables: a `Vars`, a callable returning one, or a constant name |
 
@@ -619,7 +645,7 @@ Only enable `use_layers` if your other CSS is layered too, since unlayered rules
 
 - Class names are `vc` + 12 base36 characters of a SHA1, not StyleX's murmurhash, so output is not byte-compatible with a JavaScript StyleX build.
 - Top-level pseudo-class and media keys are rejected. Nest conditions under the property.
-- A trait cannot be named after a CSS property, and one whose name collides with a method on `Object` or the sheet must be read with `styles[:name]`.
+- A trait cannot be named after a CSS property or a public method of the sheet.
 - Static analysis is limited to dynamic-trait property discovery. Other styles are included when their `create` calls are reached while loading `app/`; calls inside ERB templates are not.
 
 ## Development
