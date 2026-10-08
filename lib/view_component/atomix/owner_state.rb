@@ -8,20 +8,15 @@ module ViewComponent
     class OwnerState
       attr_accessor :styles_own, :styles_resolved, :styles_breakpoints, :styles_resolving, :variables_resolving,
                     :theme_own, :theme_resolved, :theme_resolving, :companion_styles_module
-      attr_reader :styles, :variables, :themes, :revision
+      attr_reader :styles, :variables, :themes
 
       def initialize
-        reset!
+        clear
       end
 
       def reset!
-        @revision = (@revision || 0) + 1
-        @styles_own = @styles_resolved = @styles_breakpoints = nil
-        @styles_resolving = @variables_resolving = @theme_resolving = false
-        @theme_own = @theme_resolved = @companion_styles_module = nil
-        @styles = DeclarationQueue.new
-        @variables = DeclarationQueue.new
-        @themes = DeclarationQueue.new
+        ResolutionSession.stale!
+        clear
       end
 
       def unload!
@@ -34,8 +29,19 @@ module ViewComponent
       end
 
       def invalidate!
-        @revision += 1
+        ResolutionSession.stale!
         @styles_resolved = @theme_resolved = nil
+      end
+
+      private
+
+      def clear
+        @styles_own = @styles_resolved = @styles_breakpoints = nil
+        @styles_resolving = @variables_resolving = @theme_resolving = false
+        @theme_own = @theme_resolved = @companion_styles_module = nil
+        @styles = DeclarationQueue.new
+        @variables = DeclarationQueue.new
+        @themes = DeclarationQueue.new
       end
     end
   end
