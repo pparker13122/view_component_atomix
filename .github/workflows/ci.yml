@@ -25,6 +25,18 @@ jobs:
             gemfile: gemfiles/rails_8.0.gemfile
           - ruby: "3.4"
             gemfile: gemfiles/rails_8.0.gemfile
+          - ruby: "3.2"
+            gemfile: gemfiles/rails_7.2_view_component_4.gemfile
+          - ruby: "3.3"
+            gemfile: gemfiles/rails_7.2_view_component_4.gemfile
+          - ruby: "3.4"
+            gemfile: gemfiles/rails_7.2_view_component_4.gemfile
+          - ruby: "3.2"
+            gemfile: gemfiles/rails_8.1_view_component_4.gemfile
+          - ruby: "3.3"
+            gemfile: gemfiles/rails_8.1_view_component_4.gemfile
+          - ruby: "3.4"
+            gemfile: gemfiles/rails_8.1_view_component_4.gemfile
     env:
       BUNDLE_GEMFILE: ${{ matrix.gemfile }}
     steps:
@@ -33,5 +45,7 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
+      - run: bundle exec rubocop
+      - run: bundle exec rake spec:core
       - run: bundle exec rake spec
-      - run: gem build view_component-styles.gemspec
+      - run: gem build view_component_atomix.gemspec

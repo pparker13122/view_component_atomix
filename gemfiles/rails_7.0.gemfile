@@ -5,8 +5,11 @@ source "https://rubygems.org"
 gemspec path: ".."
 
 gem "rails", "~> 7.0.5"
+gem "view_component", "~> 3.0"
 gem "logger"
+gem "json", "< 3"
 gem "sprockets-rails"
 gem "rspec-rails", "~> 6.1"
 gem "capybara"
 gem "rake"
+gem "rubocop", "~> 1.52", require: false

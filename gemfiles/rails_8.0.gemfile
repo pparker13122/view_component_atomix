@@ -4,8 +4,11 @@ source "https://rubygems.org"
 
 gemspec path: ".."
 
-gem "rails", "~> 8.0"
+gem "rails", "~> 8.0.0"
+gem "view_component", "~> 3.0"
+gem "json", "< 3"
 gem "sprockets-rails"
 gem "rspec-rails", "~> 7.1"
 gem "capybara"
 gem "rake"
+gem "rubocop", "~> 1.52", require: false
