@@ -42,8 +42,8 @@ RSpec.describe ViewComponent::Atomix do
     end
 
     it "escapes inline values" do
-      html = described_class.sx(sheet.w('"><script>'))
-      expect(html).to include("&quot;&gt;&lt;script&gt;")
+      html = described_class.sx(sheet.w('"<script>"'))
+      expect(html).to include("&quot;&lt;script&gt;&quot;")
     end
 
     it "returns an empty string for nothing" do

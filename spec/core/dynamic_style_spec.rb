@@ -101,4 +101,10 @@ RSpec.describe "dynamic fallback arrays" do
       expect(sheet.box("sticky").inline.values).to eq(["sticky"])
     end
   end
+
+  it "rejects values that would add declarations to the style attribute" do
+    sheet = ViewComponent::Atomix.create(sized: ->(width) { { width: width } })
+    expect { sheet.sized("10px;position:fixed;inset:0") }.to raise_error(ArgumentError, /Unsafe CSS value for width/)
+    expect(sheet.sized("calc(100% - 10px)").inline.values).to eq(["calc(100% - 10px)"])
+  end
 end
