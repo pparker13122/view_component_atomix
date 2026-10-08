@@ -19,6 +19,7 @@ module ViewComponent
       def initialize
         @mutex = Mutex.new
         @rules = {}
+        @root_rules = {}
         @css = nil
       end
 
@@ -85,6 +86,8 @@ module ViewComponent
             sources.delete_if { |source| source && roots.any? { |root| source.start_with?(root) } }
             sources.empty?
           end
+          @root_rules.each_value { |rules| rules.select! { |rule| @rules.key?(rule) } }
+          @root_rules.delete_if { |_, rules| rules.empty? }
           @css = nil
         end
       end
@@ -92,6 +95,7 @@ module ViewComponent
       def clear
         @mutex.synchronize do
           @rules.clear
+          @root_rules.clear
           @css = nil
         end
       end
@@ -121,12 +125,7 @@ module ViewComponent
         @mutex.synchronize do
           transaction.registrations.each do |entry|
             if entry.is_a?(RootReplacement)
-              @rules.delete_if do |rule, sources|
-                next false unless rule.selector == ":root" && rule.property == entry.property
-
-                sources.delete(entry.source)
-                sources.empty?
-              end
+              release_root(entry.property, entry.source)
             else
               register(entry.rule, entry.source)
             end
@@ -137,25 +136,37 @@ module ViewComponent
       end
 
       def register(rule, source)
-        replace_root_assignment(rule, source) if rule.selector == ":root"
-        sources = rule.selector == ":root" ? @rules.delete(rule) : @rules[rule]
-        @rules[rule] = (sources || Set.new).add(source)
+        unless rule.selector == ":root"
+          (@rules[rule] ||= Set.new).add(source)
+          return
+        end
+
+        release_root(rule.property, source) { |existing| existing.conditions == rule.conditions }
+        @rules[rule] = (@rules.delete(rule) || Set.new).add(source)
+        (@root_rules[rule.property] ||= Set.new).add(rule)
       end
 
       # Root variables are assignments, unlike content-addressed atoms. Remove
       # only this source's previous assignment; other owners may still use it.
-      def replace_root_assignment(rule, source)
-        @rules.delete_if do |existing, sources|
-          next false unless existing.selector == rule.selector &&
-                            existing.property == rule.property && existing.conditions == rule.conditions
+      def release_root(property, source)
+        rules = @root_rules[property]
+        return unless rules
 
+        rules.delete_if do |rule|
+          next false if block_given? && !yield(rule)
+
+          sources = @rules.fetch(rule)
           sources.delete(source)
-          sources.empty?
+          next false unless sources.empty?
+
+          @rules.delete(rule)
+          true
         end
+        @root_rules.delete(property) if rules.empty?
       end
 
       def reloadable_roots
-        return [] unless defined?(Rails) && Rails.respond_to?(:autoloaders)
+        return [] unless defined?(Rails) && Rails.respond_to?(:autoloaders) && Rails.application
 
         Rails.autoloaders.main.dirs.map { |dir| "#{File.expand_path(dir)}/" }
       end

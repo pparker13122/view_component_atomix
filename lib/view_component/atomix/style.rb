@@ -6,17 +6,27 @@ module ViewComponent
       attr_reader :classes, :inline
 
       def initialize(classes = {}, inline = {})
-        @classes = Immutable.copy(classes)
-        @inline = Immutable.copy(inline)
-        freeze
+        assign(Immutable.copy(classes), Immutable.copy(inline))
       end
 
-      EMPTY = new
+      def self.combine(styles)
+        styles = styles.reject(&:empty?)
+        return EMPTY if styles.empty?
+        return styles.first if styles.one?
+
+        classes = {}
+        inline = {}
+        styles.each do |style|
+          classes.update(style.classes)
+          inline.update(style.inline)
+        end
+        allocate.send(:assign, classes.freeze, inline.freeze)
+      end
 
       def merge(other)
         return self if other.nil? || other.empty?
 
-        Style.new(classes.merge(other.classes), inline.merge(other.inline))
+        Style.combine([self, other])
       end
 
       def empty?
@@ -55,6 +65,16 @@ module ViewComponent
       def hash
         [classes, inline].hash
       end
+
+      private
+
+      def assign(classes, inline)
+        @classes = classes
+        @inline = inline
+        freeze
+      end
+
+      EMPTY = new
     end
   end
 end

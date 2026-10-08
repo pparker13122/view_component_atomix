@@ -11,7 +11,7 @@ module ViewComponent
         case value
         when Hash then value.to_h { |key, item| [copy(key), copy(item)] }.freeze
         when Array then value.map { |item| copy(item) }.freeze
-        when String then value.dup.freeze
+        when String then value.frozen? ? value : value.dup.freeze
         else value
         end
       end
