@@ -1,0 +1,32 @@
+# Start with mechanical conventions; avoid imposing complexity limits on the DSL.
+AllCops:
+  TargetRubyVersion: 3.1
+  DisabledByDefault: true
+  Include:
+    - "**/*.rb"
+    - "**/*.rake"
+    - "**/*.gemspec"
+    - "**/*.gemfile"
+    - Gemfile
+    - Rakefile
+  Exclude:
+    - ".ruby-lsp/**/*"
+    - "spec/dummy/tmp/**/*"
+    - "spec/dummy/log/**/*"
+
+Layout/TrailingWhitespace:
+  Enabled: true
+Layout/TrailingEmptyLines:
+  Enabled: true
+Layout/IndentationWidth:
+  Enabled: true
+Layout/EmptyLines:
+  Enabled: true
+Layout/EmptyLinesAroundClassBody:
+  Enabled: true
+Layout/EmptyLinesAroundModuleBody:
+  Enabled: true
+Style/FrozenStringLiteralComment:
+  Enabled: true
+Security/Eval:
+  Enabled: true
