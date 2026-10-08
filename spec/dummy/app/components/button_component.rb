@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ButtonComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles base: {
            padding: "8px 16px",

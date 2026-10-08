@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ToastComponentStyles
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   style_vars gap: 6
 

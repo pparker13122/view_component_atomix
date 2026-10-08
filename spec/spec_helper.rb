@@ -1,18 +1,31 @@
 # frozen_string_literal: true
 
-ENV["RAILS_ENV"] ||= "test"
-
 require "logger" # Rails 7.0 relies on Logger being loaded before Active Support.
-require_relative "dummy/config/environment"
-require "rspec/rails"
-require "view_component/test_helpers"
-require "capybara/rspec"
+require "view_component_atomix"
+require "rspec/core"
+require "rspec/expectations"
+require "rspec/mocks"
 
 module RegistryIsolation
   def with_fresh_registry
-    registry = ViewComponent::Styles::Registry.new
-    allow(ViewComponent::Styles).to receive(:registry).and_return(registry)
+    registry = ViewComponent::Atomix::Registry.new
+    allow(ViewComponent::Atomix).to receive(:registry).and_return(registry)
     registry
+  end
+end
+
+module ConfigurationIsolation
+  SETTINGS = %i[class_prefix pseudo_map breakpoints vars eager_load_paths use_layers inline output_path styles_method].freeze
+
+  def with_preserved_styles_configuration
+    styles = ViewComponent::Atomix
+    configuration = styles.config
+    settings = SETTINGS.to_h { |name| [name, configuration.public_send(name)] }
+    assigned_vars = styles.instance_variable_get(:@vars)
+    yield
+  ensure
+    settings.each { |name, value| configuration.public_send("#{name}=", value) }
+    styles.vars = assigned_vars
   end
 end
 
@@ -22,15 +35,22 @@ RSpec.configure do |config|
   config.order = :random
   Kernel.srand config.seed
 
-  config.before do
-    # Invalid declarations intentionally created by an example must not be
-    # retried by a later example's eager load.
-    includers = ViewComponent::Styles::WeakCollection.new
-    ViewComponent::Styles.includers.each { |owner| includers << owner }
-    allow(ViewComponent::Styles).to receive(:includers).and_return(includers)
+  config.define_derived_metadata(file_path: %r{/spec/core/}) do |metadata|
+    metadata[:core] = true
   end
 
-  config.include ViewComponent::TestHelpers, type: :component
-  config.include Capybara::RSpecMatchers, type: :component
+  config.before(:each, :core) do
+    styles = ViewComponent::Atomix
+    allow(styles).to receive(:config).and_return(styles::Configuration.new)
+    allow(styles).to receive(:includers).and_return(styles::WeakCollection.new)
+    allow(styles).to receive(:dynamic_styles).and_return(styles::WeakCollection.new)
+    with_fresh_registry
+  end
+
+  config.around(:each, :preserve_styles_configuration) do |example|
+    with_preserved_styles_configuration { example.run }
+  end
+
+  config.include ConfigurationIsolation
   config.include RegistryIsolation
 end

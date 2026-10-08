@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ToastComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     trait :tone, color: styles.primary

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class PanelComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
   include DarkModeTheme
 
   style_vars gap: 12, accent: "#ff6600"

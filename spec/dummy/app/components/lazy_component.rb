@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class LazyComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     { root: { display: "grid", gap: 12, color: Brand::VARS.primary } }

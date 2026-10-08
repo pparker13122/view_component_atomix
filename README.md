@@ -1,10 +1,10 @@
-# ViewComponent::Styles
+# ViewComponent::Atomix
 
 StyleX-like atomic CSS for [ViewComponent](https://viewcomponent.org) and plain Rails views. You declare styles in Ruby, next to the component that uses them. Each property/value pair compiles to one deterministic atomic class, styles merge per property with last-wins semantics, and the CSS is collected in a registry and emitted with no JavaScript build step.
 
 ```ruby
 class ButtonComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     trait :button, padding: "8px 16px",
@@ -54,15 +54,17 @@ A few ideas run through everything below:
 
 ## Installation
 
+Requires Ruby 3.1+, Rails 7.0+, and ViewComponent 3 or 4.
+
 ```ruby
-gem "view_component_styles"
+gem "view_component_atomix"
 ```
 
 Add the stylesheet tag to your layout:
 
 ```erb
 <head>
-  <%= view_component_styles_tag %>
+  <%= view_component_atomix_tag %>
 </head>
 ```
 
@@ -70,7 +72,7 @@ Add the stylesheet tag to your layout:
 
 Outside production the tag inlines a `<style>` block, so there is nothing to build while developing. Whenever the app boots or reloads, the gem loads `app/components` and `app/styles` first so the block contains every style.
 
-In production the tag links `view_component_styles.css`, which `rake view_component:styles:build` writes to `app/assets/builds/`. The build task is inserted as the first prerequisite of `assets:precompile`, so it runs before any `css:build` or `javascript:build` step. Add the output file to `.gitignore`.
+In production the tag links `view_component_atomix.css`, which `rake view_component:atomix:build` writes to `app/assets/builds/`. The build task is inserted as the first prerequisite of `assets:precompile`, so it runs before any `css:build` or `javascript:build` step. Add the output file to `.gitignore`.
 
 Sprockets users need `//= link_tree ../builds` in `app/assets/config/manifest.js`. Propshaft picks the file up automatically.
 
@@ -78,12 +80,12 @@ Like tailwindcss-rails, this gem targets the Rails asset pipeline and does not i
 
 ## Declaring styles
 
-`include ViewComponent::Styles` in a component and open a `styles` block. Each `trait` call declares a named style, and `styles` with no block returns the compiled sheet, both at the class level and inside templates.
+`include ViewComponent::Atomix` in a component and open a `styles` block. Each `trait` call declares a named style, and `styles` with no block returns the compiled sheet, both at the class level and inside templates.
 
 ```ruby
 # app/components/card_component.rb
 class CardComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     trait :card, display: "flex", gap: 8, padding: 16
@@ -110,7 +112,7 @@ The block is evaluated when the sheet is first read, not when the class loads, s
 
 ```ruby
 class BadgeComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     trait :root, color: Brand::VARS.primary
@@ -164,7 +166,7 @@ Breakpoints are symbols you name yourself, and there are none by default. Config
 
 ```ruby
 # config/application.rb or an initializer
-config.view_component.styles.breakpoints = {
+config.view_component.atomix.breakpoints = {
   sm: "(max-width: 640px)",
   md: "(max-width: 768px)"
 }
@@ -179,6 +181,8 @@ end
 
 Breakpoints declared in a block apply to that block and every later `styles` block on the class, so put them in the first one.
 
+Breakpoint names must be symbols and queries must be strings. Global and component-local declarations both reject names that collide with pseudo-class or media shortcuts, such as `hover` or `dark`.
+
 ## Applying styles
 
 `styles.props` takes any number of styles and returns the `class` and `style` attributes for an element. It skips `nil` and `false`, so conditionals read naturally:
@@ -191,7 +195,7 @@ The return value is a Hash of `class` and `style` that also renders as an escape
 
 Merging is per CSS property, and the last argument to set a property wins. Shorthand and longhand properties are distinct keys, and the emitted CSS is sorted so longhands come after shorthands and `:active` after `:hover`. That means `padding_top` always beats `padding` regardless of definition order.
 
-Plain views have no `styles` reader, so they use the `sx` helper instead. It takes the same arguments as `props` and is available in every view and template, along with `sx_attrs`, which returns the Hash form for `tag.div(**sx_attrs(...))`. Outside views, `ViewComponent::Styles.props` and `ViewComponent::Styles.sx` do the same.
+Plain views have no `styles` reader, so they use the `sx` helper instead. It takes the same arguments as `props` and is available in every view and template, along with `sx_attrs`, which returns the Hash form for `tag.div(**sx_attrs(...))`. Outside views, `ViewComponent::Atomix.props` and `ViewComponent::Atomix.sx` do the same.
 
 ## Kinds of traits
 
@@ -272,19 +276,19 @@ A trait whose name collides with a method on `Object` or the sheet (`p`, `select
 Styles can live in three places, and they combine freely:
 
 - **In a component** with the `styles` block, as above. Subclasses inherit the sheet.
-- **In a shared module** that includes `ViewComponent::Styles`, then included into components.
-- **In plain Ruby** as constants built with `ViewComponent::Styles.create`, referenced from anywhere.
+- **In a shared module** that includes `ViewComponent::Atomix`, then included into components.
+- **In plain Ruby** as constants built with `ViewComponent::Atomix.create`, referenced from anywhere.
 
 ### Shared modules
 
-A module can `include ViewComponent::Styles` and declare traits in a `styles` block. Including that module in a component exposes its sheet under an accessor derived from the module name, at the class level and inside templates. The component's own `styles` stays separate.
+A module can `include ViewComponent::Atomix` and declare traits in a `styles` block. Including that module in a component exposes its sheet under an accessor derived from the module name, at the class level and inside templates. The component's own `styles` stays separate.
 
 The accessor is the underscored module name, namespaces included, with a trailing `Styles`, `Style`, `Theme`, `Vars` or `Variables` removed, plus `_styles`. `PillStyles` becomes `pill_styles`, `Admin::ProfileCardStyles` becomes `admin_profile_card_styles`, and `DarkModeStyle` becomes `dark_mode_styles`.
 
 ```ruby
 # app/styles/pill_styles.rb
 module PillStyles
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     trait :pill, display: :inline_block, border_radius: 999, padding: "2px 8px"
@@ -314,12 +318,12 @@ Style files live in either `app/styles` or `app/components/styles`. Both are aut
 
 ### Companion modules
 
-A module named after a component with `Styles` appended is picked up without an `include`. Its traits, variables and theme merge straight into the component's own `styles` and `theme`, as if they had been declared in the class body, so the component's own declarations win on conflicts and combination traits can reference the module's traits. `ButtonComponent` looks for `ButtonComponentStyles`, and `Admin::ButtonComponent` looks for `Admin::ButtonComponentStyles`. The component still needs `include ViewComponent::Styles`.
+A module named after a component with `Styles` appended is picked up without an `include`. Its traits, variables and theme merge straight into the component's own `styles` and `theme`, as if they had been declared in the class body, so the component's own declarations win on conflicts and combination traits can reference the module's traits. `ButtonComponent` looks for `ButtonComponentStyles`, and `Admin::ButtonComponent` looks for `Admin::ButtonComponentStyles`. The component still needs `include ViewComponent::Atomix`.
 
 ```ruby
 # app/components/toast_component_styles.rb
 module ToastComponentStyles
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     trait :root, display: :flex, gap: 6, padding: 12
@@ -328,7 +332,7 @@ end
 
 # app/components/toast_component.rb
 class ToastComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   styles do
     trait :cta, :root, font_weight: 700
@@ -346,12 +350,12 @@ The lookup is per class, so a subclass inherits its parent's companion and can a
 
 ### Plain Ruby constants
 
-Everything a component can do, plain Ruby can do with `ViewComponent::Styles.create`. It takes a hash of traits, and each value follows the same shape rules as `trait`. A block with `trait` calls works too. The result is an ordinary sheet, so assign it to a constant and reference it from any view or component:
+Everything a component can do, plain Ruby can do with `ViewComponent::Atomix.create`. It takes a hash of traits, and each value follows the same shape rules as `trait`. A block with `trait` calls works too. The result is an ordinary sheet, so assign it to a constant and reference it from any view or component:
 
 ```ruby
 # app/styles/card_styles.rb
 module CardStyles
-  CARD = ViewComponent::Styles.create(
+  CARD = ViewComponent::Atomix.create(
     root:  { padding: 24, border_radius: 8, background: "#fff" },
     title: { font_size: 20, font_weight: 600 }
   )
@@ -368,14 +372,14 @@ end
 For dynamic traits, retain the sheet constant until the asset build runs so the compiler can discover its properties. A literal-hash lambda needs no explicit `dynamic:` list:
 
 ```ruby
-SHEET = ViewComponent::Styles.create(box: ->(width) { { width: width } })
+SHEET = ViewComponent::Atomix.create(box: ->(width) { { width: width } })
 # At render time:
-ViewComponent::Styles.props(SHEET.box(120))
+ViewComponent::Atomix.props(SHEET.box(120))
 ```
 
 Keeping only the result of `create(...).box(120)` allows the declaration to be garbage-collected before production CSS compilation.
 
-The same constants work inside a component template, with or without `include ViewComponent::Styles`:
+The same constants work inside a component template, with or without `include ViewComponent::Atomix`:
 
 ```ruby
 class CardComponent < ViewComponent::Base
@@ -393,7 +397,7 @@ If `styles` clashes with something in your component, pick another name. `styles
 
 ```ruby
 class PanelComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
   styles_method :css
 
   css do
@@ -408,7 +412,7 @@ end
 PanelComponent.css.root  # => Style
 ```
 
-Set `config.view_component.styles.styles_method = :css` in an initializer to change the default for every component that includes the module afterwards.
+Set `config.view_component.atomix.styles_method = :css` in an initializer to change the default for every component that includes the module afterwards.
 
 A shared module that declares `styles_method :css` is exposed as `css` rather than under a derived accessor. If the component declares the same name, the two sheets merge into one and the component's traits win on conflicts. Only an explicit `styles_method` call inside the module counts, not the configured default.
 
@@ -423,7 +427,7 @@ parent's overrides intact.
 ```ruby
 # app/styles/tag_styles.rb
 module TagStyles
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
   styles_method :css
 
   css do
@@ -455,7 +459,7 @@ Theming is two separate ideas:
 - **Variables** are CSS custom properties. You declare them once with a default value, and styles reference them by name instead of hard-coding the value.
 - **Themes** are overrides. A theme is a `Style` whose single class sets different values for some variables. Put it on a wrapper with `styles.props` and every descendant that reads those variables picks up the new values through the cascade.
 
-Both come with `include ViewComponent::Styles`. Each is also available on its own: `include ViewComponent::Styles::Variables` gives you variables and the `styles` reader without traits, and `include ViewComponent::Styles::Theme` gives you `theme` and nothing else.
+Both come with `include ViewComponent::Atomix`. Each is also available on its own: `include ViewComponent::Atomix::Variables` gives you variables and the `styles` reader without traits, and `include ViewComponent::Atomix::Theme` gives you `theme` and nothing else.
 
 ### Variables
 
@@ -463,7 +467,7 @@ Declare variables in a component with `style_vars`. They are read back through `
 
 ```ruby
 class PanelComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   style_vars gap: "12px", accent: "#ff6600"
 
@@ -478,6 +482,14 @@ PanelComponent.styles.var_names  # => [:gap, :accent]
 
 This emits `:root{--vcnbqr2vub:12px}` and `:root{--vclpsr1n9z:#ff6600}` in the stylesheet. Repeated `style_vars` calls merge, the block form defers evaluation like `styles do`, and subclasses inherit and can redeclare individual keys.
 
+Redeclaring a key from the same source replaces its entire value, including its
+conditions. For example, replacing `{ default: "red", dark: "black" }` with
+`"blue"` removes the old dark-mode branch. A `nil` or empty-hash value removes
+that source's assignments while retaining the variable reference. Other keys
+and assignments owned by other source files remain intact. This also applies
+to repeated `define_vars` calls with the same name. Failed replacements leave
+the previous assignments intact.
+
 Rules for values:
 
 - Values follow the same rules as style values. Numeric variables stay unitless, matching StyleX. Use explicit units for lengths (`"12px"`) and times (`"200ms"`).
@@ -491,7 +503,7 @@ Variables shared across the app live in a plain Ruby file and are built with `de
 ```ruby
 # app/styles/brand.rb
 module Brand
-  VARS = ViewComponent::Styles.define_vars(
+  VARS = ViewComponent::Atomix.define_vars(
     primary: "#0055ff",
     surface: { default: "#fff", dark: "#111" },
     weight: "600"
@@ -501,10 +513,10 @@ end
 
 ```ruby
 # config/application.rb or an initializer
-config.view_component.styles.vars = -> { Brand::VARS }
+config.view_component.atomix.vars = -> { Brand::VARS }
 ```
 
-Once configured, every component's `styles` falls back to those variables, so `styles.primary` works in any component without declaring anything. A component's own `style_vars` shadow the configured ones. Outside components, read them from the constant or `ViewComponent::Styles.vars`.
+Once configured, every component's `styles` falls back to those variables, so `styles.primary` works in any component without declaring anything. A component's own `style_vars` shadow the configured ones. Outside components, read them from the constant or `ViewComponent::Atomix.vars`.
 
 The setting accepts a `Vars` object, a callable, or a constant name as a string. Prefer the callable or string form in an initializer, since `app/styles` is not loaded yet when initializers run.
 
@@ -514,7 +526,7 @@ Declare a theme with `theme`. Keys resolve against the variables visible through
 
 ```ruby
 class PanelComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
 
   style_vars accent: "#ff6600"
 
@@ -539,22 +551,22 @@ The emitted CSS is one class per set of variables the theme touches, for example
 - Subclasses inherit the parent's theme. Declaring a theme for the same `Vars` set replaces that entire inherited theme, including overrides for keys omitted by the child. Repeat any parent overrides you want to retain; themes targeting other variable sets remain inherited.
 - Two themes for the same `Vars` set are mutually exclusive when merged, and the last one wins. Themes nest: an inner wrapper's theme overrides an outer one for its subtree.
 
-For plain Ruby, `ViewComponent::Styles.create_theme(vars, **overrides)` builds the same `Style` from an explicit `Vars` object, and `vars.theme(**overrides)` is shorthand for it.
+For plain Ruby, `ViewComponent::Atomix.create_theme(vars, **overrides)` builds the same `Style` from an explicit `Vars` object, and `vars.theme(**overrides)` is shorthand for it.
 
 ### Theme modules
 
-Put a theme in a module to share it. Including the module in a component exposes the theme as `<name>_theme`, where the name is derived the same way as for shared style modules, so `Admin::DarkTheme` becomes `admin_dark_theme`. The component's own `theme` stays separate. A module that only includes `ViewComponent::Styles::Theme` has no variables of its own, so its keys resolve against the app-wide vars.
+Put a theme in a module to share it. Including the module in a component exposes the theme as `<name>_theme`, where the name is derived the same way as for shared style modules, so `Admin::DarkTheme` becomes `admin_dark_theme`. The component's own `theme` stays separate. A module that only includes `ViewComponent::Atomix::Theme` has no variables of its own, so its keys resolve against the app-wide vars.
 
 ```ruby
 # app/styles/dark_mode_theme.rb
 module DarkModeTheme
-  include ViewComponent::Styles::Theme
+  include ViewComponent::Atomix::Theme
 
   theme surface: "#000", primary: "#99bbff"
 end
 
 class PanelComponent < ViewComponent::Base
-  include ViewComponent::Styles
+  include ViewComponent::Atomix
   include DarkModeTheme
 
   theme accent: "#00cc66"
@@ -569,14 +581,14 @@ class PanelComponent < ViewComponent::Base
 end
 ```
 
-A module named `DarkModeStyle` that declares both traits and a theme is exposed as `dark_mode_styles` and `dark_mode_theme`. A module that includes `ViewComponent::Styles::Variables` follows the styles rule: `BrandVars` is exposed as `brand_styles`. An anonymous module merges into the component's `theme` or `styles` instead.
+A module named `DarkModeStyle` that declares both traits and a theme is exposed as `dark_mode_styles` and `dark_mode_theme`. A module that includes `ViewComponent::Atomix::Variables` follows the styles rule: `BrandVars` is exposed as `brand_styles`. An anonymous module merges into the component's `theme` or `styles` instead.
 
 ### Dark mode and responsive variables
 
 Because conditions live on the variable declaration, most dark mode work happens in `define_vars` or `style_vars` and components stay unaware of it:
 
 ```ruby
-VARS = ViewComponent::Styles.define_vars(
+VARS = ViewComponent::Atomix.define_vars(
   surface: { default: "#fff", dark: "#111" },
   text: { default: "#111", dark: "#eee" },
   gutter: { default: 16, md: 12 }
@@ -587,16 +599,16 @@ For a user-selectable theme rather than a media query, declare one theme module 
 
 ## Configuration
 
-All options live under `config.view_component.styles`.
+All options live under `config.view_component.atomix`.
 
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `inline` | `true` outside production | Inline a `<style>` tag instead of linking the built file |
-| `output_path` | `app/assets/builds/view_component_styles.css` | Where the build task writes |
+| `output_path` | `app/assets/builds/view_component_atomix.css` | Where the build task writes |
 | `breakpoints` | `{}` | Symbol keys usable as conditions app-wide; `breakpoints` inside a `styles` block adds or overrides per component |
 | `pseudo_map` | see `Configuration::DEFAULT_PSEUDO_MAP` | Symbol to pseudo-class/at-rule mapping |
 | `class_prefix` | `"vc"` | Prefix for generated class and variable names |
-| `styles_method` | `:styles` | Name of the class macro and instance reader added by `include ViewComponent::Styles` |
+| `styles_method` | `:styles` | Name of the class macro and instance reader added by `include ViewComponent::Atomix` |
 | `eager_load_paths` | `["app/components", "app/components/styles", "app/styles"]` | Directories loaded before the first request in development |
 | `use_layers` | `false` | Wrap output in `@layer` blocks ordered by priority |
 | `vars` | `nil` | App-wide variables: a `Vars`, a callable returning one, or a constant name |
@@ -615,11 +627,27 @@ Only enable `use_layers` if your other CSS is layered too, since unlayered rules
 ```
 bundle install
 bundle exec rspec
+bundle exec rake spec:core
+bundle exec rubocop
 ```
 
 The dummy app in `spec/dummy` exercises the railtie, the inline and file modes, and the rake task.
 
-`ViewComponent::Styles.reset!` is a full reset for isolated environments: it clears registered CSS, tracked dynamic styles, configured variables, configuration values, and all style/variable/theme declarations and compiled caches on existing tracked owners. Existing accessor names remain installed, so those owners can accept new declarations. Previously returned standalone `Style`, `Sheet`, and `Vars` objects are obsolete after reset and must be recreated. Configuration object identity is preserved for Rails. Use the normal Rails reloader for development reloads instead.
+Core specs live in `spec/core` and run with `spec_helper` without booting Rails.
+Each core example gets fresh configuration, a registry, and owner/dynamic
+collections; compiler specs declare their own breakpoint fixtures. Rails specs
+explicitly require `rails_helper`, which boots the dummy application and keeps
+failed declarations isolated from later eager loads. `rake spec` runs both
+groups, and CI also runs `rake spec:core` in a separate process to check that the
+core suite works independently.
+
+Owner styles, variables, and themes use the internal `commit_owner_declaration`
+boundary to commit CSS independently before publishing compiled owner results.
+User blocks remain outside that boundary so successful dependencies retain
+their existing lifetimes; style-specific breakpoint rollback stays with style
+compilation.
+
+`ViewComponent::Atomix.reset!` is a full reset for isolated environments: it clears registered CSS, tracked dynamic styles, configured variables, configuration values, and all style/variable/theme declarations and compiled caches on existing tracked owners. Existing accessor names remain installed, so those owners can accept new declarations. Previously returned standalone `Style`, `Sheet`, and `Vars` objects are obsolete after reset and must be recreated. Configuration object identity is preserved for Rails. Use the normal Rails reloader for development reloads instead.
 
 A failed compilation does not publish partial CSS. Corrected declarations can be retried; separately resolved dependencies that succeeded remain registered. Declaration blocks are Ruby code: their own side effects and successful explicit calls to `create` or `define_vars` are not rolled back. Style and variable declarations retain successful earlier declarations when a later one fails.
 
@@ -631,14 +659,60 @@ declaration still publishes no partial CSS. Standalone `define_vars` and
 `create_theme` calls inside an explicit registry transaction retain that
 transaction's rollback behavior.
 
+Declarations added during resolution are processed before the completed result
+is cached, including work added by a parent, mixin, or companion. Successful
+blocks are not rerun to refresh the cache. Resolution raises `ArgumentError`
+after 1,000 batches or dependency retries across the entire nested read, after
+32 unstable passes on one owner, or before exceeding 64 nested resolution/drain
+frames. Recursive reads share these limits instead of starting fresh budgets.
+Finite nested declarations remain supported within those bounds; after an
+error, a new read receives a fresh budget and retries the remaining work.
+
+Reentrant reads can see completed declarations while an owner is still being
+evaluated. These temporary results, and results that depend on them, are not
+cached as complete. Once the outer read finishes, merged contexts can be rebuilt
+without rerunning successful blocks. This also keeps a failed theme's queued
+declaration available for retry after a reentrant read.
+
 Value objects own copies of their containers and strings. `Style`, `Rule`, and `Vars` expose frozen data; `Sheet` and `EnumeratedStyle` copy their maps while retaining the style objects they reference. Build a new value or merge styles instead of mutating exposed data. `Sheet#fetch` accepts the same arguments as the corresponding trait method, including rejecting arguments for static traits.
+
+Theme blocks must return a Hash of overrides. Invalid results raise `ArgumentError` and can be retried after correction.
 
 For contributors, declaration handling is organized by responsibility:
 
-- `Accessors` installs readers and resolves module/companion names; `Base` resolves style declarations and inheritance.
+- `Accessors` installs readers and resolves module/companion names; `Base` resolves style declarations and inheritance. Renaming an accessor invalidates dependent sheets and themes.
+- `TraitClassifier` distinguishes plain, enumerated, combination, and dynamic definitions; `Compiler` resolves references and emits CSS rules.
+- `AttributeHelpers` supplies the shared `sx` and `sx_attrs` methods for components and views.
 - `OwnerState` owns declaration queues and compiled caches. Reset clears declarations and caches while leaving installed accessors intact.
 - `DeclarationQueue` restores failed and remaining declarations ahead of newly enqueued work. Resolvers control evaluation and transaction boundaries under the shared resolution monitor.
+- `ResolutionSession` tracks provisional dependencies and shares work/depth limits across owner reads, queue drains, and the final cache rebuild.
 - `ThemeResolution` combines inherited and local themes; `ThemeCompiler` registers overrides for one variable group.
 - `Registry` stores registrations and commit callbacks separately. Nested transactions join their parent unless explicitly independent; callbacks run after rules are committed, outside the registry mutex.
 
 Tests are grouped by subsystem, with focused lifecycle, transaction, and CSS-output specs for behavior spanning multiple modules.
+
+Condition handling is shared through `ConditionResolver`: each compiler uses
+one snapshot of global and component breakpoints plus pseudo shortcuts.
+Standalone variables resolve conditions against the current global configuration.
+
+Owner lifecycle calls go through named methods on `Base`. `OwnerState` holds
+resettable declarations and caches; `Accessors` retains installed names and mixin
+metadata across resets. An unloaded owner remains unloaded; Rails creates a new
+owner when loading its constant again.
+
+Dynamic property discovery keeps three supporting responsibilities separate:
+`DynamicProperties::SourceParser` indexes lambdas,
+`DynamicProperties::SourceCache` caches parsed files, and
+`DynamicProperties::LiteralKey` decodes static keys while rejecting interpolation.
+The literal reader reparses strings immediately before evaluating them.
+Quoted symbol keys (`:'width'`, `:"width"`, `"width":`, and `%s(width)`) follow
+Ruby's quoting and escape rules just like literal string keys. Interpolated
+symbols and labels remain unsupported and are never evaluated during discovery.
+
+User-facing diagnostics call declarations “traits.” Internal `sets` maps and
+`set` identifiers retain their existing names for compatibility. Callable
+parameters use `fn` consistently.
+
+CI runs the same RuboCop checks as the development command above. The initial
+rules cover whitespace, indentation, frozen-string headers, and explicit review
+of `eval`; they do not impose method-length or DSL complexity limits.

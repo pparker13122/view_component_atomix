@@ -5,7 +5,7 @@ require "action_controller/railtie"
 require "action_view/railtie"
 require "sprockets/railtie"
 require "view_component"
-require "view_component_styles"
+require "view_component_atomix"
 
 module Dummy
   class Application < Rails::Application
@@ -21,7 +21,7 @@ module Dummy
     config.assets.debug = false
     config.assets.quiet = true
 
-    config.view_component.styles.breakpoints = { md: "@media (max-width: 768px)" }
-    config.view_component.styles.vars = -> { Brand::VARS }
+    config.view_component.atomix.breakpoints = { md: "@media (max-width: 768px)" }
+    config.view_component.atomix.vars = -> { Brand::VARS }
   end
 end
