@@ -7,10 +7,12 @@ module ViewComponent
 
       def view_component_atomix_tag(**options)
         config = ViewComponent::Atomix.config
+        options[:nonce] = content_security_policy_nonce if options[:nonce] == true
 
         if config.inline?
-          content_tag(:style, ViewComponent::Atomix.registry.to_css.html_safe,
-                      { data: { view_component_atomix: true } }.merge(options))
+          css = ViewComponent::Atomix.registry.to_css
+          css = css.gsub("</", "<\\/") if css.include?("</")
+          content_tag(:style, css.html_safe, { "data-view-component-atomix": "true" }.merge(options))
         else
           stylesheet_link_tag(stylesheet_logical_path(config.output_path),
                               { "data-turbo-track": "reload" }.merge(options))
