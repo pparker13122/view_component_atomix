@@ -39,9 +39,10 @@ module ViewComponent
         print: "@media print"
       }.freeze
 
-      attr_accessor :class_prefix, :pseudo_map, :vars, :eager_load_paths, :use_layers,
-                    :inline, :output_path
-      attr_reader :styles_method, :breakpoints
+      CLASS_PREFIX = /\A[a-zA-Z_][a-zA-Z0-9_-]*\z/
+
+      attr_accessor :vars, :eager_load_paths, :autoload_roots, :use_layers, :inline, :output_path
+      attr_reader :styles_method, :breakpoints, :class_prefix, :pseudo_map
       alias inline? inline
 
       def initialize
@@ -55,6 +56,7 @@ module ViewComponent
         @output_path = "app/assets/builds/view_component_atomix.css"
         @vars = nil
         @eager_load_paths = ["app/components", "app/components/styles", "app/styles"]
+        @autoload_roots = ["app/components/styles"]
         @use_layers = false
         @inline = true
         @styles_method = :styles
@@ -64,9 +66,32 @@ module ViewComponent
         @styles_method = name.to_sym
       end
 
+      def class_prefix=(prefix)
+        prefix = prefix.to_s
+        unless prefix.match?(CLASS_PREFIX)
+          raise ArgumentError, "class_prefix must start with a letter or underscore and contain only " \
+                               "letters, digits, hyphens and underscores, got #{prefix.inspect}"
+        end
+
+        @class_prefix = prefix
+      end
+
+      def pseudo_map=(map)
+        raise ArgumentError, "pseudo_map must be a Hash, got #{map.class}" unless map.is_a?(Hash)
+
+        map.each do |key, value|
+          raise ArgumentError, "pseudo_map key must be a Symbol, got #{key.inspect}" unless key.is_a?(Symbol)
+          unless value.is_a?(String) && value.start_with?(":", "@")
+            raise ArgumentError, "pseudo_map #{key.inspect} must be a String starting with ':' or '@', got #{value.inspect}"
+          end
+        end
+        ConditionResolver.validate_breakpoints!(breakpoints, pseudo_map: map)
+        @pseudo_map = map.dup
+      end
+
       def breakpoints=(map)
         validate_breakpoints!(map)
-        @breakpoints = map
+        @breakpoints = map.dup
       end
 
       def validate_breakpoints!(map)

@@ -69,6 +69,36 @@ RSpec.describe "style directories" do
     expect(Rails.application.config.paths.eager_load).to include(dir)
   end
 
+  it "compiles styles when Rails is loaded but no application is defined yet" do
+    project = File.expand_path("../../..", __dir__)
+    script = <<~'SCRIPT'
+      require "logger"
+      require "rails"
+      require "view_component"
+      require "view_component_atomix"
+      sheet = ViewComponent::Atomix.create(root: { color: "red" })
+      abort "expected a compiled rule" unless ViewComponent::Atomix.registry.to_css.include?(".#{sheet.root.class_names}{color:red}")
+    SCRIPT
+    output, status = Open3.capture2e("bundle", "exec", "ruby", "-e", script, chdir: project)
+    expect(status.success?).to be(true), output
+  end
+
+  it "leaves app/components/styles alone when autoload_roots is emptied before boot" do
+    project = File.expand_path("../../..", __dir__)
+    script = <<~'SCRIPT'
+      require "logger"
+      require "rails"
+      require "view_component"
+      require "view_component_atomix"
+      ViewComponent::Atomix.config.autoload_roots = []
+      require File.expand_path("spec/dummy/config/environment")
+      dir = Rails.root.join("app/components/styles").to_s
+      abort "expected #{dir} not to be an autoload root" if Rails.autoloaders.main.dirs.include?(dir)
+    SCRIPT
+    output, status = Open3.capture2e({ "RAILS_ENV" => "production" }, "bundle", "exec", "ruby", "-e", script, chdir: project)
+    expect(status.success?).to be(true), output
+  end
+
   it "eager loads both directories into the registry when the application boots" do
     project = File.expand_path("../../..", __dir__)
     script = <<~'SCRIPT'

@@ -15,7 +15,7 @@ module RegistryIsolation
 end
 
 module ConfigurationIsolation
-  SETTINGS = %i[class_prefix pseudo_map breakpoints vars eager_load_paths use_layers inline output_path styles_method].freeze
+  SETTINGS = %i[class_prefix pseudo_map breakpoints vars eager_load_paths autoload_roots use_layers inline output_path styles_method].freeze
 
   def with_preserved_styles_configuration
     styles = ViewComponent::Atomix
