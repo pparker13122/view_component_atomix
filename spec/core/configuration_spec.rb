@@ -70,4 +70,9 @@ RSpec.describe ViewComponent::Atomix::Configuration do
     config.breakpoints[:hover] = "(min-width: 1px)"
     expect { config.resolve_condition(:hover) }.to raise_error(ArgumentError, /collides/)
   end
+
+  it "validates pseudo map entries changed through the mutable configuration map" do
+    config.pseudo_map[:open] = "[open]"
+    expect { config.resolve_condition(:hover) }.to raise_error(ArgumentError, /pseudo_map :open/)
+  end
 end

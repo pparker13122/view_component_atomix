@@ -77,14 +77,7 @@ module ViewComponent
       end
 
       def pseudo_map=(map)
-        raise ArgumentError, "pseudo_map must be a Hash, got #{map.class}" unless map.is_a?(Hash)
-
-        map.each do |key, value|
-          raise ArgumentError, "pseudo_map key must be a Symbol, got #{key.inspect}" unless key.is_a?(Symbol)
-          unless value.is_a?(String) && value.start_with?(":", "@")
-            raise ArgumentError, "pseudo_map #{key.inspect} must be a String starting with ':' or '@', got #{value.inspect}"
-          end
-        end
+        ConditionResolver.validate_pseudo_map!(map)
         ConditionResolver.validate_breakpoints!(breakpoints, pseudo_map: map)
         @pseudo_map = map.dup
       end
