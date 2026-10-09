@@ -79,6 +79,21 @@ RSpec.describe ViewComponent::Atomix::Property do
       end
     end
 
+    it "reads an unquoted url() as one token, where /* does not open a comment" do
+      ["url(http://a/*b)", "no-repeat URL( /*.png )", "image-set(url(a/*b) 1x)", '"x"url(/*)', "url(a\\)/*b)"].each do |value|
+        expect(described_class.validate_value!("background", value)).to equal(value)
+      end
+    end
+
+    it "keeps comment rules for functions that only resemble an unquoted url()" do
+      [
+        "xurl(/*)", "-url(/*)", "\\75rl(/*)", "\\ url(/*)", "\\41 url(/*)", "url (/*)", 'url("/*)', "url(/*",
+        "url(a b/*)", "url(a(/*)", "url(/*);color:red"
+      ].each do |value|
+        expect { described_class.validate_value!("background", value) }.to raise_error(ArgumentError, /Unsafe CSS value/)
+      end
+    end
+
     it "rejects values that could end the declaration or swallow what follows" do
       [
         "red;background:blue", "red}body{display:none", "url(x", "calc(1px))", '"open', "'a\nb'", "red /* open",

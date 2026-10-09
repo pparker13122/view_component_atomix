@@ -77,6 +77,8 @@ module ViewComponent
       DOUBLE_QUOTED = /"(?:[^"\\\n\r\f]|\\.)*"/m
       SINGLE_QUOTED = /'(?:[^'\\\n\r\f]|\\.)*'/m
       COMMENT = %r{/\*.*?\*/}m
+      URL_NAME = /(?:\A|[\s,])url\z/i
+      UNQUOTED_URL = /\(\s*(?:[^"'()\\\s[:cntrl:]]|\\[^\n\r\f])*\s*\)/
       CLOSERS = { "(" => ")", "[" => "]", "{" => "}" }.freeze
 
       module_function
@@ -113,8 +115,18 @@ module ViewComponent
       def self_contained?(value)
         open = []
         scanner = StringScanner.new(value)
+        url = escaped = false
         until scanner.eos?
-          next if scanner.skip(PLAIN_TEXT) || scanner.skip(ESCAPE) || scanner.skip(DOUBLE_QUOTED) ||
+          if (text = scanner.scan(PLAIN_TEXT))
+            url = !escaped && text.match?(URL_NAME)
+            escaped = false
+            next
+          end
+
+          after_url = url
+          url = false
+          next if (escaped = scanner.skip(ESCAPE))
+          next if (after_url && scanner.skip(UNQUOTED_URL)) || scanner.skip(DOUBLE_QUOTED) ||
                   scanner.skip(SINGLE_QUOTED) || scanner.skip(COMMENT)
 
           if scanner.match?(%r{/\*}) then return false
