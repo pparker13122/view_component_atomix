@@ -73,12 +73,15 @@ module ViewComponent
 
       STRUCTURAL_CHARACTERS = %r{[;{}()\[\]"'\\]|/\*}
       PLAIN_TEXT = %r{[^;{}()\[\]"'\\/]+}
-      ESCAPE = /\\./m
+      ESCAPE = /\\(?:\h{1,6}(?:\r\n|[ \t\n\r\f])?|.)/m
       DOUBLE_QUOTED = /"(?:[^"\\\n\r\f]|\\.)*"/m
       SINGLE_QUOTED = /'(?:[^'\\\n\r\f]|\\.)*'/m
       COMMENT = %r{/\*.*?\*/}m
-      URL_NAME = /(?:\A|[\s,])url\z/i
-      UNQUOTED_URL = /\(\s*(?:[^"'()\\\s[:cntrl:]]|\\[^\n\r\f])*\s*\)/
+      NAME = /\A(?:[a-zA-Z0-9_\-\x00]|[^\x00-\x7F])*\z/
+      URL_NAME = /(?<![a-zA-Z0-9_\-\x00]|[^\x00-\x7F])url\z/i
+      SPLIT_URL_NAME = /(?:[#@]|<!--)url\z/i
+      QUOTED_URL = /\([ \t\n\r\f]*["']/
+      UNQUOTED_URL = /\([ \t\n\r\f]*(?:[^"'()\\\x00-\x20\x7F]|\\[^\n\r\f])*[ \t\n\r\f]*\)/
       CLOSERS = { "(" => ")", "[" => "]", "{" => "}" }.freeze
 
       module_function
@@ -115,19 +118,24 @@ module ViewComponent
       def self_contained?(value)
         open = []
         scanner = StringScanner.new(value)
-        url = escaped = false
+        word = nil
+        escaped = false
         until scanner.eos?
           if (text = scanner.scan(PLAIN_TEXT))
-            url = !escaped && text.match?(URL_NAME)
-            escaped = false
+            word = text
+            next
+          end
+          if scanner.skip(ESCAPE)
+            word = nil
+            escaped = true
             next
           end
 
-          after_url = url
-          url = false
-          next if (escaped = scanner.skip(ESCAPE))
-          next if (after_url && scanner.skip(UNQUOTED_URL)) || scanner.skip(DOUBLE_QUOTED) ||
-                  scanner.skip(SINGLE_QUOTED) || scanner.skip(COMMENT)
+          url = scanner.match?(/\(/) && url_token(scanner, word.to_s, escaped)
+          word = nil
+          escaped = false
+          return false if url == :malformed
+          next if url == :consumed || scanner.skip(DOUBLE_QUOTED) || scanner.skip(SINGLE_QUOTED) || scanner.skip(COMMENT)
 
           if scanner.match?(%r{/\*}) then return false
           elsif scanner.skip(%r{/}) then next
@@ -138,6 +146,13 @@ module ViewComponent
           end
         end
         open.empty?
+      end
+
+      def url_token(scanner, name, escaped)
+        return :malformed if (escaped && name.match?(NAME)) || name.match?(SPLIT_URL_NAME)
+        return unless name.match?(URL_NAME) && !scanner.match?(QUOTED_URL)
+
+        scanner.skip(UNQUOTED_URL) ? :consumed : :malformed
       end
 
       def base_priority(property)

@@ -103,6 +103,22 @@ RSpec.describe ViewComponent::Atomix::Property do
       end
     end
 
+    it "rejects a url() that a browser would end somewhere else" do
+      [
+        "url(a(b);position:fixed;x:(c))", 'url(a"b)c"; color:red)', "a:url(/*);color:red;x:*/)",
+        "\\75rl(/*);color:red;x:*/)", "\\75 rl(/*);color:red;x:*/)", "u\\72l(/*);color:red;x:*/)",
+        "<!--url(/*);color:red;x:*/)", "#url(a/*b)", "url(\v\");color:red;x:(\")", "\u0000url(a/*b)"
+      ].each do |value|
+        expect { described_class.validate_value!("background", value) }.to raise_error(ArgumentError, /Unsafe CSS value/)
+      end
+    end
+
+    it "still reads a quoted url() and other functions ending in url as functions" do
+      ['url("a;b")', "url( 'a)b' )", "--asset-url(a)", "var(--x, url(a.png))"].each do |value|
+        expect(described_class.validate_value!("background", value)).to equal(value)
+      end
+    end
+
     it "applies to normalized strings and symbols but not numbers" do
       expect { described_class.normalize_value("color", "red;x:y") }.to raise_error(ArgumentError, /Unsafe CSS value/)
       expect(described_class.normalize_value("width", 10)).to eq("10px")
