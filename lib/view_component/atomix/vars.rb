@@ -55,9 +55,15 @@ module ViewComponent
       end
 
       def self.validate_definitions!(definitions)
-        return if definitions.is_a?(Hash)
+        unless definitions.is_a?(Hash)
+          raise ArgumentError, "Variable definitions must be a Hash, got #{definitions.class}"
+        end
 
-        raise ArgumentError, "Variable definitions must be a Hash, got #{definitions.class}"
+        definitions.each_key do |key|
+          next unless method_defined?(key.to_sym) || Sheet.method_defined?(key.to_sym)
+
+          raise ArgumentError, "Variable #{key.inspect} collides with a method on Vars or the styles sheet. Pick another name."
+        end
       end
 
       def self.register(selector, var, value, conditions = [])

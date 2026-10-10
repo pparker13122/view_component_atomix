@@ -75,4 +75,29 @@ RSpec.describe "Rails integration", type: :request do
     expect(classes).to include(*CardStyles::CARD.root.class_names.split)
     expect(classes).to include(*CardStyles::CARD.title.class_names.split)
   end
+
+  describe "view_component_atomix_tag" do
+    let(:view) { ActionView::Base.empty }
+
+    it "keeps a closing style tag inside a value from ending the inline stylesheet" do
+      with_fresh_registry
+      styles.create(quoted: { content: '"</style><script>alert(1)</script>"' })
+
+      html = view.view_component_atomix_tag
+      expect(html.scan("</style").length).to eq(1)
+      expect(html).to include('content:"<\\/style><script>alert(1)<\\/script>"')
+    end
+
+    it "resolves nonce: true to the request nonce in both delivery modes" do
+      allow(view).to receive(:content_security_policy_nonce).and_return("abc123")
+      expect(view.view_component_atomix_tag(nonce: true)).to include('nonce="abc123"')
+
+      path = Rails.root.join(styles.config.output_path)
+      File.write(path, styles.registry.to_css)
+      allow(styles.config).to receive(:inline?).and_return(false)
+      expect(view.view_component_atomix_tag(nonce: true)).to include('nonce="abc123"')
+    ensure
+      FileUtils.rm_f(path) if path
+    end
+  end
 end

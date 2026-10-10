@@ -71,6 +71,19 @@ module ViewComponent
       PSEUDO_ELEMENT_PRIORITY = 5000
       LOGICAL_PATTERN = /(^|-)(block|inline|start|end)(-|$)/
 
+      STRUCTURAL_CHARACTERS = %r{[;{}()\[\]"'\\]|/\*}
+      PLAIN_TEXT = %r{[^;{}()\[\]"'\\/]+}
+      ESCAPE = /\\(?:\h{1,6}(?:\r\n|[ \t\n\r\f])?|.)/m
+      DOUBLE_QUOTED = /"(?:[^"\\\n\r\f]|\\.)*"/m
+      SINGLE_QUOTED = /'(?:[^'\\\n\r\f]|\\.)*'/m
+      COMMENT = %r{/\*.*?\*/}m
+      NAME = /\A(?:[a-zA-Z0-9_\-\x00]|[^\x00-\x7F])*\z/
+      URL_NAME = /(?<![a-zA-Z0-9_\-\x00]|[^\x00-\x7F])url\z/i
+      SPLIT_URL_NAME = /(?:[#@]|<!--)url\z/i
+      QUOTED_URL = /\([ \t\n\r\f]*["']/
+      UNQUOTED_URL = /\([ \t\n\r\f]*(?:[^"'()\\\x00-\x20\x7F]|\\[^\n\r\f])*[ \t\n\r\f]*\)/
+      CLOSERS = { "(" => ")", "[" => "]", "{" => "}" }.freeze
+
       module_function
 
       def normalize_key(key)
@@ -88,9 +101,58 @@ module ViewComponent
           return "#{value}ms" if TIME_PROPERTIES.include?(property)
           return "0" if value.zero?
           UNITLESS.include?(property) ? value.to_s : "#{value}px"
-        when Symbol then value.to_s.tr("_", "-")
-        else value.to_s
+        when Symbol then validate_value!(property, value.to_s.tr("_", "-"))
+        else validate_value!(property, value.to_s)
         end
+      end
+
+      def validate_value!(property, value)
+        return value unless value.match?(STRUCTURAL_CHARACTERS)
+        return value if self_contained?(value)
+
+        raise ArgumentError,
+              "Unsafe CSS value for #{property}: #{value.inspect}. A value cannot contain a top-level ';' " \
+              "or unbalanced quotes, brackets or comments."
+      end
+
+      def self_contained?(value)
+        open = []
+        scanner = StringScanner.new(value)
+        word = nil
+        escaped = false
+        until scanner.eos?
+          if (text = scanner.scan(PLAIN_TEXT))
+            word = text
+            next
+          end
+          if scanner.skip(ESCAPE)
+            word = nil
+            escaped = true
+            next
+          end
+
+          url = scanner.match?(/\(/) && url_token(scanner, word.to_s, escaped)
+          word = nil
+          escaped = false
+          return false if url == :malformed
+          next if url == :consumed || scanner.skip(DOUBLE_QUOTED) || scanner.skip(SINGLE_QUOTED) || scanner.skip(COMMENT)
+
+          if scanner.match?(%r{/\*}) then return false
+          elsif scanner.skip(%r{/}) then next
+          elsif (bracket = scanner.scan(/[(\[{]/)) then open << CLOSERS.fetch(bracket)
+          elsif (bracket = scanner.scan(/[)\]}]/)) then return false unless open.pop == bracket
+          elsif scanner.skip(/;/) then return false if open.empty?
+          else return false
+          end
+        end
+        open.empty?
+      end
+
+      def url_token(scanner, name, escaped)
+        return :malformed if (escaped && name.match?(NAME)) || name.match?(SPLIT_URL_NAME)
+        return unless name.match?(URL_NAME) && !scanner.match?(QUOTED_URL)
+
+        scanner.skip(UNQUOTED_URL) ? :consumed : :malformed
       end
 
       def base_priority(property)

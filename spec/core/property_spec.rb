@@ -68,4 +68,61 @@ RSpec.describe ViewComponent::Atomix::Property do
       expect(described_class.priority("color", ["::before"])).to eq(9000)
     end
   end
+
+  describe ".validate_value!" do
+    it "accepts values whose structure is self-contained" do
+      [
+        "red", "1px solid #000", "rgb(0 0 0 / 50%)", "calc((100% - 2px) / 3)", 'url("data:image/png;base64,AAAA")',
+        "url(data:image/png;base64,AAAA)", '"a;b"', "'it\\'s'", "1 / 2", "red /* note */", "[row-start] 1fr", ""
+      ].each do |value|
+        expect(described_class.validate_value!("color", value)).to equal(value)
+      end
+    end
+
+    it "reads an unquoted url() as one token, where /* does not open a comment" do
+      ["url(http://a/*b)", "no-repeat URL( /*.png )", "image-set(url(a/*b) 1x)", '"x"url(/*)', "url(a\\)/*b)"].each do |value|
+        expect(described_class.validate_value!("background", value)).to equal(value)
+      end
+    end
+
+    it "keeps comment rules for functions that only resemble an unquoted url()" do
+      [
+        "xurl(/*)", "-url(/*)", "\\75rl(/*)", "\\ url(/*)", "\\41 url(/*)", "url (/*)", 'url("/*)', "url(/*",
+        "url(a b/*)", "url(a(/*)", "url(/*);color:red"
+      ].each do |value|
+        expect { described_class.validate_value!("background", value) }.to raise_error(ArgumentError, /Unsafe CSS value/)
+      end
+    end
+
+    it "rejects values that could end the declaration or swallow what follows" do
+      [
+        "red;background:blue", "red}body{display:none", "url(x", "calc(1px))", '"open', "'a\nb'", "red /* open",
+        "trailing\\", "(]"
+      ].each do |value|
+        expect { described_class.validate_value!("color", value) }.to raise_error(ArgumentError, /Unsafe CSS value for color/)
+      end
+    end
+
+    it "rejects a url() that a browser would end somewhere else" do
+      [
+        "url(a(b);position:fixed;x:(c))", 'url(a"b)c"; color:red)', "a:url(/*);color:red;x:*/)",
+        "\\75rl(/*);color:red;x:*/)", "\\75 rl(/*);color:red;x:*/)", "u\\72l(/*);color:red;x:*/)",
+        "<!--url(/*);color:red;x:*/)", "#url(a/*b)", "url(\v\");color:red;x:(\")", "\u0000url(a/*b)"
+      ].each do |value|
+        expect { described_class.validate_value!("background", value) }.to raise_error(ArgumentError, /Unsafe CSS value/)
+      end
+    end
+
+    it "still reads a quoted url() and other functions ending in url as functions" do
+      ['url("a;b")', "url( 'a)b' )", "--asset-url(a)", "var(--x, url(a.png))"].each do |value|
+        expect(described_class.validate_value!("background", value)).to equal(value)
+      end
+    end
+
+    it "applies to normalized strings and symbols but not numbers" do
+      expect { described_class.normalize_value("color", "red;x:y") }.to raise_error(ArgumentError, /Unsafe CSS value/)
+      expect(described_class.normalize_value("width", 10)).to eq("10px")
+      expect(described_class.normalize_value("display", :inline_block)).to eq("inline-block")
+    end
+  end
 end

@@ -6,6 +6,7 @@ require "pathname"
 require "digest/sha1"
 require "monitor"
 require "tempfile"
+require "strscan"
 require "active_support"
 require "active_support/concern"
 require "active_support/core_ext/string/output_safety"
@@ -117,9 +118,7 @@ module ViewComponent
       end
 
       def merge(*styles)
-        styles.flatten.compact.reduce(Style::EMPTY) do |acc, style|
-          acc.merge(coerce_style(style))
-        end
+        Style.combine(styles.flatten.compact.map { |style| coerce_style(style) })
       end
 
       def props(*styles)

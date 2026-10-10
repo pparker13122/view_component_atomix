@@ -32,4 +32,14 @@ RSpec.describe ViewComponent::Atomix::Style do
     expect(described_class::EMPTY.to_attrs).to eq({})
     expect(described_class::EMPTY.class_names).to be_nil
   end
+
+  it "combines many styles in one pass with the same result as pairwise merging" do
+    styles = [sheet.a, described_class::EMPTY, sheet.b, sheet.c]
+    combined = described_class.combine(styles)
+    expect(combined).to eq(styles.reduce(described_class::EMPTY, :merge))
+    expect(combined).to be_frozen
+    expect(combined.classes).to be_frozen
+    expect(described_class.combine([])).to equal(described_class::EMPTY)
+    expect(described_class.combine([described_class::EMPTY, sheet.a])).to equal(sheet.a)
+  end
 end

@@ -8,6 +8,7 @@ module ViewComponent
       attr_reader :breakpoints, :pseudo_map
 
       def initialize(breakpoints:, pseudo_map:)
+        self.class.validate_pseudo_map!(pseudo_map)
         self.class.validate_breakpoints!(breakpoints, pseudo_map: pseudo_map)
         @breakpoints = Immutable.copy(breakpoints)
         @pseudo_map = Immutable.copy(pseudo_map)
@@ -28,6 +29,17 @@ module ViewComponent
       def pseudo_element?(key)
         resolved = key.is_a?(String) ? key : pseudo_map[key]
         resolved.is_a?(String) && resolved.start_with?("::")
+      end
+
+      def self.validate_pseudo_map!(map)
+        raise ArgumentError, "pseudo_map must be a Hash, got #{map.class}" unless map.is_a?(Hash)
+
+        map.each do |key, value|
+          raise ArgumentError, "pseudo_map key must be a Symbol, got #{key.inspect}" unless key.is_a?(Symbol)
+          unless value.is_a?(String) && value.start_with?(":", "@")
+            raise ArgumentError, "pseudo_map #{key.inspect} must be a String starting with ':' or '@', got #{value.inspect}"
+          end
+        end
       end
 
       def self.validate_breakpoints!(map, pseudo_map:)

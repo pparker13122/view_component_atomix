@@ -10,6 +10,37 @@ RSpec.describe ViewComponent::Atomix::Configuration do
     expect(config.class_prefix).to eq("vc")
     expect(config.styles_method).to eq(:styles)
     expect(config.eager_load_paths).to eq(["app/components", "app/components/styles", "app/styles"])
+    expect(config.autoload_roots).to eq(["app/components/styles"])
+  end
+
+  it "rejects class prefixes that cannot start a class name" do
+    ["", "9x", "-x", "a b", "a.b"].each do |prefix|
+      expect { config.class_prefix = prefix }.to raise_error(ArgumentError, /class_prefix/)
+    end
+    expect(config.class_prefix).to eq("vc")
+    config.class_prefix = :app_ui
+    expect(config.class_prefix).to eq("app_ui")
+  end
+
+  it "validates and copies an assigned pseudo map" do
+    config.breakpoints = { small: "(max-width: 600px)" }
+    original = config.pseudo_map
+    [nil, { "hover" => ":hover" }, { hover: "hover" }, { hover: nil }, { small: ":hover" }].each do |invalid|
+      expect { config.pseudo_map = invalid }.to raise_error(ArgumentError)
+      expect(config.pseudo_map).to equal(original)
+    end
+
+    assigned = { hover: ":hover" }
+    config.pseudo_map = assigned
+    assigned[:small] = ":first-child"
+    expect(config.pseudo_map).to eq(hover: ":hover")
+  end
+
+  it "copies assigned breakpoints" do
+    assigned = { small: "(max-width: 600px)" }
+    config.breakpoints = assigned
+    assigned[:hover] = "(min-width: 1px)"
+    expect(config.breakpoints).to eq(small: "(max-width: 600px)")
   end
 
   it "stores the styles method name as a symbol" do
@@ -40,4 +71,8 @@ RSpec.describe ViewComponent::Atomix::Configuration do
     expect { config.resolve_condition(:hover) }.to raise_error(ArgumentError, /collides/)
   end
 
+  it "validates pseudo map entries changed through the mutable configuration map" do
+    config.pseudo_map[:open] = "[open]"
+    expect { config.resolve_condition(:hover) }.to raise_error(ArgumentError, /pseudo_map :open/)
+  end
 end

@@ -32,4 +32,20 @@ RSpec.describe ViewComponent::Atomix::Vars do
     b = ViewComponent::Atomix.create_theme(vars, primary: "green")
     expect(ViewComponent::Atomix.merge(a, b).class_names).to eq(b.class_names)
   end
+
+  it "rejects variable names that collide with Vars or sheet methods" do
+    %i[id names theme sets merge hash].each do |name|
+      expect { ViewComponent::Atomix.define_vars(name => "1") }
+        .to raise_error(ArgumentError, /Variable #{name.inspect} collides with a method/)
+    end
+    expect(registry.size).to eq(0)
+  end
+
+  it "rejects variable and theme values that could escape their rule" do
+    expect { ViewComponent::Atomix.define_vars(primary: "red}body{display:none") }
+      .to raise_error(ArgumentError, /Unsafe CSS value/)
+    vars = ViewComponent::Atomix.define_vars(primary: "#00f")
+    expect { vars.theme(primary: "red;color:blue") }.to raise_error(ArgumentError, /Unsafe CSS value/)
+    expect(registry.size).to eq(1)
+  end
 end

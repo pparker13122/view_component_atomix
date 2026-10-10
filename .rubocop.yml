@@ -10,6 +10,7 @@ AllCops:
     - Gemfile
     - Rakefile
   Exclude:
+    - "vendor/**/*"
     - ".ruby-lsp/**/*"
     - "spec/dummy/tmp/**/*"
     - "spec/dummy/log/**/*"

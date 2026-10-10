@@ -8,6 +8,18 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+      - run: bundle exec rubocop
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -19,6 +31,10 @@ jobs:
           - ruby: "3.4"
             gemfile: gemfiles/rails_7.0.gemfile
         include:
+          - ruby: "3.1"
+            gemfile: gemfiles/rails_7.1.gemfile
+          - ruby: "3.3"
+            gemfile: gemfiles/rails_7.1.gemfile
           - ruby: "3.2"
             gemfile: gemfiles/rails_8.0.gemfile
           - ruby: "3.3"
@@ -36,16 +52,19 @@ jobs:
           - ruby: "3.3"
             gemfile: gemfiles/rails_8.1_view_component_4.gemfile
           - ruby: "3.4"
+            gemfile: gemfiles/rails_8.1_view_component_4.gemfile
+          - ruby: "4.0"
             gemfile: gemfiles/rails_8.1_view_component_4.gemfile
     env:
       BUNDLE_GEMFILE: ${{ matrix.gemfile }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - run: bundle exec rubocop
       - run: bundle exec rake spec:core
       - run: bundle exec rake spec
       - run: gem build view_component_atomix.gemspec

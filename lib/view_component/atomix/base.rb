@@ -64,6 +64,9 @@ module ViewComponent
         end
 
         def resolve_owner(kind)
+          cached = kind == :styles ? styles_state.styles_resolved : styles_state.theme_resolved
+          return cached if cached
+
           styles_resolution_monitor.synchronize do
             ResolutionSession.with do |session|
               resolving = :"#{kind}_resolving"
@@ -87,7 +90,7 @@ module ViewComponent
                   session.provisional! if kind == :styles && styles_state.variables_resolving
                   styles_state.public_send(:"#{resolving}=", true)
                   begin
-                    result = resolve_stable { yield false }
+                    result = resolve_stable(frame) { yield false }
                     provisional = frame.provisional
                     styles_state.public_send(:"#{cache}=", result) unless provisional
                   rescue StandardError
@@ -112,11 +115,11 @@ module ViewComponent
 
         # Dependencies can declare more work on this owner while its context is
         # being assembled. Never overwrite their invalidation with a stale sheet.
-        def resolve_stable
+        def resolve_stable(frame)
           ResolutionSession::MAX_STABILITY_PASSES.times do
-            revision = styles_state.revision
+            frame.stale = false
             result = yield
-            return result if styles_state.revision == revision
+            return result unless frame.stale
 
             ResolutionSession.with(&:consume!)
           end

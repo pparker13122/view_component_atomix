@@ -59,3 +59,20 @@ RSpec.describe "sheet invocation consistency" do
     expect { sheet.fetch(:tone, :missing) }.to raise_error(KeyError)
   end
 end
+
+RSpec.describe "reserved trait names" do
+  before { with_fresh_registry }
+
+  it "rejects traits that collide with public sheet methods" do
+    %i[names merge hash props fetch vars].each do |name|
+      expect { ViewComponent::Atomix.create(name => { color: "red" }) }
+        .to raise_error(ArgumentError, /Trait #{name.inspect} collides with a method on the styles sheet/)
+    end
+  end
+
+  it "keeps names that only collide with private Kernel methods readable" do
+    sheet = ViewComponent::Atomix.create(p: { color: "red" }, select: { color: "blue" })
+    expect(sheet.p).to equal(sheet[:p])
+    expect(sheet.select).to equal(sheet[:select])
+  end
+end
