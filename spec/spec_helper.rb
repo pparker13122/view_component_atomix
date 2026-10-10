@@ -24,6 +24,7 @@ module ConfigurationIsolation
     assigned_vars = styles.instance_variable_get(:@vars)
     yield
   ensure
+    configuration.breakpoints = {}
     settings.each { |name, value| configuration.public_send("#{name}=", value) }
     styles.vars = assigned_vars
   end
