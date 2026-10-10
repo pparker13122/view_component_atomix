@@ -94,6 +94,12 @@ RSpec.describe "style directories" do
       require File.expand_path("spec/dummy/config/environment")
       dir = Rails.root.join("app/components/styles").to_s
       abort "expected #{dir} not to be an autoload root" if Rails.autoloaders.main.dirs.include?(dir)
+      begin
+        Rails.autoloaders.main.eager_load
+        abort "expected eager loading to look for Styles::BadgeStyles in #{dir}"
+      rescue Zeitwerk::NameError => e
+        abort e.message unless e.message.include?("Styles::BadgeStyles")
+      end
     SCRIPT
     output, status = Open3.capture2e({ "RAILS_ENV" => "production" }, "bundle", "exec", "ruby", "-e", script, chdir: project)
     expect(status.success?).to be(true), output

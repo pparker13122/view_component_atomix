@@ -338,7 +338,7 @@ Use a plain module. One that extends `ActiveSupport::Concern` defers the include
 
 Style files live in either `app/styles` or `app/components/styles`. Both are autoload roots, so `app/components/styles/pill_styles.rb` defines `PillStyles`, not `Styles::PillStyles`.
 
-The gem registers `app/components/styles` as a root itself. If your app already has that directory and expects `Styles::` constants in it, set `config.view_component.atomix.autoload_roots = []` in `config/application.rb`.
+The gem registers `app/components/styles` as a root itself. If your app already has that directory and expects `Styles::` constants in it, set `config.view_component.atomix.autoload_roots = []` in `config/application.rb`. Files in that directory then follow the Rails naming rules, so `app/components/styles/pill_styles.rb` has to define `Styles::PillStyles` or eager loading fails.
 
 ### Companion modules
 
