@@ -1,5 +1,8 @@
 # ViewComponent::Atomix
 
+[![Gem Version](https://badge.fury.io/rb/view_component_atomix.svg)](https://rubygems.org/gems/view_component_atomix)
+[![CI](https://github.com/pparker13122/view_component_atomix/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pparker13122/view_component_atomix/actions/workflows/ci.yml)
+
 StyleX-like atomic CSS for [ViewComponent](https://viewcomponent.org) and plain Rails views. You declare styles in Ruby, next to the component that uses them. Each property/value pair compiles to one deterministic atomic class, styles merge per property with last-wins semantics, and the CSS is collected in a registry and emitted with no JavaScript build step.
 
 ```ruby
